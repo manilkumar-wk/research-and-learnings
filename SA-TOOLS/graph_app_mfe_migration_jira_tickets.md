@@ -128,7 +128,7 @@ them.
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `documentation`
-**Story Points:** 1 (1 day -- grep constants, build mapping table)
+**Story Points:** 0.5 (half day -- Claude greps constants and builds the table, human verifies)
 
 **Description:**
 graph_app's experience configs reference route segments via constants in
@@ -259,7 +259,7 @@ Also address sidebar headers:
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `core`
-**Story Points:** 3 (3 days -- create entry point, wire up asset loader, handle mode detection)
+**Story Points:** 1 (1 day -- Claude generates entry point from form_config/assessments_client pattern, human reviews and tests locally)
 
 **Description:**
 Create a new MFE entry point at `app/web/w_sox_app.mfe.dart` that uses
@@ -295,7 +295,7 @@ instead of the legacy `createApp()` pattern in `app/web/main.dart`.
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `core`
-**Story Points:** 5 (5 days -- 27 experience configs + 10 widgets + service registration + mode handling)
+**Story Points:** 2 (2 days -- Claude scaffolds all 27 contributions + 10 widgets from experience_configs.dart, human reviews and wires up service registration)
 
 **Description:**
 Create a `WsoxExtension` class extending `WdeskExtension` that registers
@@ -361,7 +361,7 @@ replaces the compile-time registration in wdesk's
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `core`
-**Story Points:** 5 (5 days -- 25+ route entries, 9 sidebar entries, access control expressions, validation)
+**Story Points:** 1 (1 day -- Claude generates full manifest from route mapping + experience configs, human validates access control expressions and ordering)
 
 **Description:**
 Replace the current minimal `app/web/manifest.yaml`:
@@ -405,7 +405,7 @@ GRAPH-004.
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`
-**Story Points:** 1 (1 day -- config change + build verification)
+**Story Points:** 0.5 (half day -- Claude generates config, human verifies build output)
 
 **Description:**
 Update `app/build.yaml` to enable `wdesk_sdk_builders|mfe` for the new
@@ -429,7 +429,7 @@ MFE entry point. Ensure the build produces the correct compiled JS output
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `testing`
-**Story Points:** 3 (3 days -- deploy, test all 27 experiences, fix issues)
+**Story Points:** 2 (2 days -- human deploys and clicks through 27 experiences, Claude fixes issues found)
 
 **Description:**
 Deploy graph_app MFE to wk-dev and verify it loads correctly in wdesk
@@ -534,7 +534,7 @@ the compile-time path to confirm feature parity.
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `pipeline`
-**Story Points:** 3 (3 days -- author template, populate plan IDs, validate in rmconsole)
+**Story Points:** 1 (1 day -- Claude already generated the template, human populates plan IDs and registers in rmconsole)
 
 **Description:**
 Create `pipeline_template.yaml` in graph_app repo root with the following
@@ -633,7 +633,7 @@ Intentionally deploy a known-bad build to pentest to validate:
 **Priority:** Critical
 **Component:** wdesk
 **Labels:** `mfe-migration`, `decoupling`, `breaking-change`
-**Story Points:** 5 (5 days -- 9 files, ~103 references, thorough testing)
+**Story Points:** 2 (2 days -- Claude generates the complete PR diff for all 9 files, human reviews and runs CI)
 
 **Description:**
 Single PR that removes all compile-time coupling between wdesk and
@@ -694,7 +694,7 @@ the MFE path works with feature parity.
 **Priority:** High
 **Component:** wdesk
 **Labels:** `mfe-migration`, `data-migration`
-**Story Points:** 3 (3 days -- investigate, implement approach, validate with real data)
+**Story Points:** 1 (1 day -- Claude generates widget migration code, human validates against real dashboard data)
 
 **Description:**
 The 10 IR landing page widgets use string keys persisted in the
@@ -739,7 +739,7 @@ will break existing user landing page dashboards.
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `production`
-**Story Points:** 3 (3 days -- pipeline runs through 8 environments with gates)
+**Story Points:** 2 (2 days -- human triggers and monitors pipeline through 8 environments)
 
 **Description:**
 Promote graph_app through its independent pipeline to all production
@@ -828,7 +828,7 @@ Monitor production for 1 week after cutover:
 **Priority:** Medium
 **Component:** graph_app
 **Labels:** `mfe-migration`, `cleanup`
-**Story Points:** 1 (1 day -- delete file, update build config, verify)
+**Story Points:** 0.5 (half day -- Claude generates cleanup PR, human reviews)
 
 **Description:**
 After the MFE path is the sole production path, remove:
@@ -855,7 +855,7 @@ entry point.
 **Priority:** Low
 **Component:** graph_app
 **Labels:** `mfe-migration`, `cleanup`
-**Story Points:** 1 (1 day -- investigate dependencies, document decision)
+**Story Points:** 0.5 (half day -- Claude analyzes Docker usage across CI, human decides)
 
 **Description:**
 graph_app currently builds a Docker image via `Dockerfile-wdeskapp`
@@ -879,7 +879,7 @@ for functional testing or can be removed.
 **Priority:** Medium
 **Component:** graph_app
 **Labels:** `mfe-migration`, `documentation`
-**Story Points:** 2 (2 days -- README, runbook, on-call playbook, ADR)
+**Story Points:** 1 (1 day -- Claude drafts all docs, human reviews and publishes)
 
 **Description:**
 Update:
@@ -897,25 +897,46 @@ Update:
 ## Summary: Ticket Counts and Estimates
 
 > **Scale:** 1 point = 1 day (8 hours)
+>
+> **Estimates assume Claude-assisted development** -- code generation,
+> manifest authoring, config scaffolding, and PR prep are accelerated.
+> Human time is primarily review, coordination, and deployment operations.
 
-| Phase | Tickets | Story Points (days) | Calendar Estimate |
-|---|---|---|---|
-| Phase 0: Preparation | 6 | 13.5 days | ~3 weeks (parallelizable) |
-| Phase 1: MFE Manifest | 5 | 17 days | ~3.5 weeks |
-| Phase 2: Dual-Path Validation | 2 | 5 days | ~1 week |
-| Phase 3: Pipeline Setup | 3 | 6 days | ~1.5 weeks |
-| Phase 4: wdesk Decoupling | 2 | 8 days | ~2 weeks |
-| Phase 5: Production Cutover | 3 | 10 days | ~2 weeks |
-| Phase 6: Cleanup | 3 | 4 days | ~1 week |
-| **Total** | **24 tickets** | **63.5 days** | **~14 weeks / 1 quarter** |
+| Phase | Tickets | Points (days) | What Claude does | What humans do |
+|---|---|---|---|---|
+| Phase 0: Preparation | 6 | 5 | Route mapping, documentation | Slack channel, Signals plans, rmconsole registration, FEWS spike |
+| Phase 1: MFE Manifest | 5 | 6 | Generate entry point, extension class, manifest.yaml, build config | Review, test locally, iterate |
+| Phase 2: Dual-Path Validation | 2 | 2 | Diff analysis, test result comparison | Deploy to envs, run functional tests |
+| Phase 3: Pipeline Setup | 3 | 3 | Generate pipeline_template.yaml | Register in rmconsole, run promotions, validate rollback |
+| Phase 4: wdesk Decoupling | 2 | 3 | Generate full PR diff (9 files, 103 refs), widget migration code | Review PR, coordinate merge timing |
+| Phase 5: Production Cutover | 3 | 7 | Monitoring dashboards, runbook | Promote pipelines, 5-day bake period (passive) |
+| Phase 6: Cleanup | 3 | 2 | Dead code removal PR, ADR draft | Review, merge |
+| **Total** | **24 tickets** | **28 days** | | |
 
-**Notes on calendar estimate:**
-- Phase 0 tasks are highly parallelizable (GRAPH-001/002/004/005 can
-  run concurrently), reducing wall-clock time
-- Phase 5 includes a 5-day bake period that is mostly passive monitoring
-- Assumes 1 engineer full-time; with 2 engineers, critical path
-  compresses to ~10 weeks
-- Buffer not included -- add 20% for unknowns discovered during spikes
+### Calendar projection
+
+| Scenario | Wall-clock time |
+|---|---|
+| 1 engineer + Claude | ~6-7 weeks |
+| 2 engineers + Claude | ~4-5 weeks |
+
+**What Claude accelerates vs what it can't:**
+
+| Claude handles (fast) | Human-gated (irreducible) |
+|---|---|
+| Manifest.yaml with all 27 contributions | FEWS capability spike (need platform team answers) |
+| WsoxExtension class scaffolding | Signals plan creation (manual in Skynet UI) |
+| pipeline_template.yaml generation | rmconsole pipeline registration (manual) |
+| wdesk decoupling PR (all 9 files) | Deployment promotion through environments |
+| Route mapping table | 5-day production bake period |
+| ADR and documentation drafts | Cross-team coordination (release-eng, wdesk_sdk) |
+| Test comparison analysis | Rollback validation (intentional bad deploy) |
+
+**Bottom line:** ~60% of the raw coding/authoring work can be Claude-
+generated in hours, not days. The calendar is dominated by deployment
+operations, environment promotions, Signals test creation, and the
+mandatory bake period -- things that require human hands on production
+systems.
 
 ## Critical Path
 
