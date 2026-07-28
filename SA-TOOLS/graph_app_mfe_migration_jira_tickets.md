@@ -1,5 +1,7 @@
 # graph_app MFE Migration: Jira Tickets & Task Breakdown
 
+> **Estimation scale:** 1 story point = 1 day (8 hours)
+
 ## Epic Structure
 
 ```
@@ -29,7 +31,7 @@ EPIC-1: graph_app Independent Release Pipeline
 **Priority:** Medium
 **Component:** graph_app
 **Labels:** `mfe-migration`, `infrastructure`
-**Story Points:** 1
+**Story Points:** 0.5 (half day)
 
 **Description:**
 Create a dedicated Slack channel `#alert-graph-app` for pipeline deployment
@@ -52,7 +54,7 @@ notifications and failure alerts. This channel will be referenced in the
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `testing`
-**Story Points:** 5
+**Story Points:** 5 (1 week -- 7 plans, ~0.5-1 day each)
 
 **Description:**
 Create Signals (Skynet) test plans for each deployment environment. These
@@ -88,7 +90,7 @@ Base the test scenarios on graph_app's existing functional test suite
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `spike`, `blocking`
-**Story Points:** 3
+**Story Points:** 3 (3 days -- POC + validation + documentation)
 
 **Description:**
 graph_app requires the following MFE contribution types in its manifest.
@@ -126,7 +128,7 @@ them.
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `documentation`
-**Story Points:** 2
+**Story Points:** 1 (1 day -- grep constants, build mapping table)
 
 **Description:**
 graph_app's experience configs reference route segments via constants in
@@ -179,7 +181,7 @@ manifest requires literal strings. Produce a complete mapping table.
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `infrastructure`
-**Story Points:** 2
+**Story Points:** 1 (1 day -- coordination + registration)
 
 **Description:**
 Coordinate with release-eng to determine:
@@ -207,7 +209,7 @@ Coordinate with release-eng to determine:
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `spike`, `architecture`
-**Story Points:** 3
+**Story Points:** 3 (3 days -- evaluate options, build POC, document decision)
 
 **Description:**
 Today wdesk uses three different `ExperienceRegistry` classes based on
@@ -257,7 +259,7 @@ Also address sidebar headers:
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `core`
-**Story Points:** 5
+**Story Points:** 3 (3 days -- create entry point, wire up asset loader, handle mode detection)
 
 **Description:**
 Create a new MFE entry point at `app/web/w_sox_app.mfe.dart` that uses
@@ -293,7 +295,7 @@ instead of the legacy `createApp()` pattern in `app/web/main.dart`.
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `core`
-**Story Points:** 8
+**Story Points:** 5 (5 days -- 27 experience configs + 10 widgets + service registration + mode handling)
 
 **Description:**
 Create a `WsoxExtension` class extending `WdeskExtension` that registers
@@ -359,7 +361,7 @@ replaces the compile-time registration in wdesk's
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `core`
-**Story Points:** 8
+**Story Points:** 5 (5 days -- 25+ route entries, 9 sidebar entries, access control expressions, validation)
 
 **Description:**
 Replace the current minimal `app/web/manifest.yaml`:
@@ -403,7 +405,7 @@ GRAPH-004.
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`
-**Story Points:** 2
+**Story Points:** 1 (1 day -- config change + build verification)
 
 **Description:**
 Update `app/build.yaml` to enable `wdesk_sdk_builders|mfe` for the new
@@ -427,7 +429,7 @@ MFE entry point. Ensure the build produces the correct compiled JS output
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `testing`
-**Story Points:** 3
+**Story Points:** 3 (3 days -- deploy, test all 27 experiences, fix issues)
 
 **Description:**
 Deploy graph_app MFE to wk-dev and verify it loads correctly in wdesk
@@ -464,7 +466,7 @@ https://wk-dev.wdesk.org/fews/v1/serve/wdesk+cdn-dev:graph_app@<BUILD_ID>
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `testing`
-**Story Points:** 3
+**Story Points:** 2 (2 days -- deploy both envs, verify no conflicts)
 
 **Description:**
 Deploy graph_app as an MFE to wk-dev and staging environments while
@@ -491,7 +493,7 @@ wdesk still bundles w_sox at compile time. Verify:
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `testing`
-**Story Points:** 5
+**Story Points:** 3 (3 days -- run all suites, compare results, triage diffs)
 
 **Description:**
 Run the complete graph_app functional test suite (controls testing,
@@ -532,7 +534,7 @@ the compile-time path to confirm feature parity.
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `pipeline`
-**Story Points:** 5
+**Story Points:** 3 (3 days -- author template, populate plan IDs, validate in rmconsole)
 
 **Description:**
 Create `pipeline_template.yaml` in graph_app repo root with the following
@@ -573,7 +575,7 @@ Each deployment stage includes:
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `pipeline`, `testing`
-**Story Points:** 3
+**Story Points:** 2 (2 days -- promote through 3 stages, verify each gate)
 
 **Description:**
 Perform a dry-run promotion of graph_app through its pipeline to validate
@@ -598,7 +600,7 @@ the stage gates, Signals integration, and Slack alerting.
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `pipeline`, `testing`
-**Story Points:** 3
+**Story Points:** 1 (1 day -- deploy bad build, observe rollback, document)
 
 **Description:**
 Intentionally deploy a known-bad build to pentest to validate:
@@ -631,7 +633,7 @@ Intentionally deploy a known-bad build to pentest to validate:
 **Priority:** Critical
 **Component:** wdesk
 **Labels:** `mfe-migration`, `decoupling`, `breaking-change`
-**Story Points:** 8
+**Story Points:** 5 (5 days -- 9 files, ~103 references, thorough testing)
 
 **Description:**
 Single PR that removes all compile-time coupling between wdesk and
@@ -692,7 +694,7 @@ the MFE path works with feature parity.
 **Priority:** High
 **Component:** wdesk
 **Labels:** `mfe-migration`, `data-migration`
-**Story Points:** 5
+**Story Points:** 3 (3 days -- investigate, implement approach, validate with real data)
 
 **Description:**
 The 10 IR landing page widgets use string keys persisted in the
@@ -737,7 +739,7 @@ will break existing user landing page dashboards.
 **Priority:** Critical
 **Component:** graph_app
 **Labels:** `mfe-migration`, `production`
-**Story Points:** 5
+**Story Points:** 3 (3 days -- pipeline runs through 8 environments with gates)
 
 **Description:**
 Promote graph_app through its independent pipeline to all production
@@ -760,7 +762,7 @@ wk-dev -> staging -> pentest -> sandbox -> demo -> APAC -> EU -> prod
 **Priority:** Critical
 **Component:** wdesk
 **Labels:** `mfe-migration`, `production`
-**Story Points:** 3
+**Story Points:** 2 (2 days -- merge, promote through wdesk pipeline, verify)
 
 **Description:**
 After graph_app is independently deployed to production (GRAPH-050),
@@ -791,7 +793,7 @@ its pipeline.
 **Priority:** High
 **Component:** graph_app
 **Labels:** `mfe-migration`, `monitoring`
-**Story Points:** 2
+**Story Points:** 5 (5 days -- daily monitoring checks for 1 week)
 
 **Description:**
 Monitor production for 1 week after cutover:
@@ -826,7 +828,7 @@ Monitor production for 1 week after cutover:
 **Priority:** Medium
 **Component:** graph_app
 **Labels:** `mfe-migration`, `cleanup`
-**Story Points:** 3
+**Story Points:** 1 (1 day -- delete file, update build config, verify)
 
 **Description:**
 After the MFE path is the sole production path, remove:
@@ -853,7 +855,7 @@ entry point.
 **Priority:** Low
 **Component:** graph_app
 **Labels:** `mfe-migration`, `cleanup`
-**Story Points:** 2
+**Story Points:** 1 (1 day -- investigate dependencies, document decision)
 
 **Description:**
 graph_app currently builds a Docker image via `Dockerfile-wdeskapp`
@@ -877,7 +879,7 @@ for functional testing or can be removed.
 **Priority:** Medium
 **Component:** graph_app
 **Labels:** `mfe-migration`, `documentation`
-**Story Points:** 2
+**Story Points:** 2 (2 days -- README, runbook, on-call playbook, ADR)
 
 **Description:**
 Update:
@@ -894,16 +896,26 @@ Update:
 
 ## Summary: Ticket Counts and Estimates
 
-| Phase | Tickets | Story Points | Duration Estimate |
+> **Scale:** 1 point = 1 day (8 hours)
+
+| Phase | Tickets | Story Points (days) | Calendar Estimate |
 |---|---|---|---|
-| Phase 0: Preparation | 6 | 16 | 1-2 sprints |
-| Phase 1: MFE Manifest | 5 | 26 | 2-3 sprints |
-| Phase 2: Dual-Path Validation | 2 | 8 | 1 sprint |
-| Phase 3: Pipeline Setup | 3 | 11 | 1 sprint |
-| Phase 4: wdesk Decoupling | 2 | 13 | 1 sprint |
-| Phase 5: Production Cutover | 3 | 10 | 1 sprint |
-| Phase 6: Cleanup | 3 | 7 | 1 sprint |
-| **Total** | **24 tickets** | **91 story points** | **8-10 sprints** |
+| Phase 0: Preparation | 6 | 13.5 days | ~3 weeks (parallelizable) |
+| Phase 1: MFE Manifest | 5 | 17 days | ~3.5 weeks |
+| Phase 2: Dual-Path Validation | 2 | 5 days | ~1 week |
+| Phase 3: Pipeline Setup | 3 | 6 days | ~1.5 weeks |
+| Phase 4: wdesk Decoupling | 2 | 8 days | ~2 weeks |
+| Phase 5: Production Cutover | 3 | 10 days | ~2 weeks |
+| Phase 6: Cleanup | 3 | 4 days | ~1 week |
+| **Total** | **24 tickets** | **63.5 days** | **~14 weeks / 1 quarter** |
+
+**Notes on calendar estimate:**
+- Phase 0 tasks are highly parallelizable (GRAPH-001/002/004/005 can
+  run concurrently), reducing wall-clock time
+- Phase 5 includes a 5-day bake period that is mostly passive monitoring
+- Assumes 1 engineer full-time; with 2 engineers, critical path
+  compresses to ~10 weeks
+- Buffer not included -- add 20% for unknowns discovered during spikes
 
 ## Critical Path
 
