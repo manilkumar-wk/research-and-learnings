@@ -1102,3 +1102,778 @@ ROLLBACK PROCEDURE: graph_app Independent Release
    different ones to avoid collision?
 5. **`VerifySmithySucceeded` step:** graph_app uses GHA, not Smithy. Is
    there a `VerifyGHASucceeded` equivalent for pipeline_template.yaml?
+
+---
+
+## Part D: wdesk Reference Removal and Post-Decoupling Routing
+
+### D.1 Complete File Inventory: Every w_sox Reference in wdesk
+
+**9 files must be modified. 0 can be skipped.**
+
+#### File 1: `wdesk/pubspec.yaml` (Dependency Declaration)
+
+**Line 118-122 -- REMOVE:**
+```yaml
+w_sox:
+  hosted:
+    name: w_sox
+    url: https://pub.workiva.org
+  version: ^10.4.29
+```
+
+Also remove any transitive graph_* packages that are ONLY pulled in via
+w_sox and not used directly by wdesk. Candidates:
+- `graph_app_js` (v1.0.37 -- only used by w_sox)
+
+**Risk:** [BREAKING] -- removing w_sox breaks every file that imports it.
+All other file changes must land in the same PR.
+
+---
+
+#### File 2: `wdesk/lib/src/experience_registry.dart` (Primary Registry)
+
+**Lines 20-21 -- REMOVE imports:**
+```dart
+import 'package:w_sox/experience_configs.dart' as w_sox;
+import 'package:w_sox/landing_page_widgets.dart' as ir_widgets;
+```
+
+**Lines 62-86 -- REMOVE drawer experiences (9 references):**
+```dart
+// REMOVE all of these:
+w_sox.ResourceManagementExperienceConfig(),    // line 62
+w_sox.OverviewExperienceConfig(),              // line 63
+w_sox.ReportListExperienceConfig(),            // line 75
+w_sox.DashboardListExperienceConfig(),         // line 76
+w_sox.DataDrawerExperienceConfig(),            // line 77
+w_sox.DataModelExperienceConfig(),             // line 80
+w_sox.SupportExperienceConfig(),               // line 81
+w_sox.TextualQueryExperienceConfig(),          // line 85
+w_sox.ProjectFilesExperienceConfig(),          // line 86
+```
+
+**Lines 118-136 -- REMOVE rich experiences (16 references):**
+```dart
+// REMOVE all of these:
+w_sox.ExportListExperienceConfig(),            // line 118
+w_sox.FocusExperienceConfig(),                 // line 119
+w_sox.FocusNewExperienceConfig(),              // line 120
+w_sox.BulkTestFormImportExperienceConfig(),    // line 121
+w_sox.SamplingRichExperienceConfig.v2(),       // line 125
+w_sox.ReportExperienceConfig(),                // line 126
+w_sox.DashboardRichExperienceConfig(),         // line 127
+w_sox.TestFormRichExperienceConfig(),          // line 128
+w_sox.TextualQueryEditExperienceConfig(),      // line 129
+w_sox.EvidenceTestingExperienceConfig(),       // line 130
+w_sox.GraphAttachmentViewerExperienceConfig(), // line 131
+w_sox.GraphMarkupViewerExperienceConfig(),     // line 132
+w_sox.ReportBuilderExperienceConfig(),         // line 133
+w_sox.ResourcePlanExperienceConfig(),          // line 134
+w_sox.RawGraphExperienceConfig(),              // line 135
+w_sox.SuggestedPermissionsExperienceConfig(),  // line 136
+```
+
+**Lines 169-170 -- REMOVE embeddable experiences (2 references):**
+```dart
+// REMOVE:
+w_sox.createSampleSelectionExperienceConfig(), // line 169
+w_sox.createTestFormSpreadsheetExperienceConfig(), // line 170
+```
+
+**Lines 194-205 -- REMOVE landing page widgets (10 references):**
+```dart
+// REMOVE all ir_widgets.* references:
+'ir_charts': ir_widgets.ChartWidgetConfig(),
+'ir_primary_data_types': ir_widgets.DataTypesWidgetConfig(),
+'ir_recent_test_forms': ir_widgets.TestFormRecencyWidgetConfig(),
+'ir_recent_audit_forms': ir_widgets.AuditFormRecencyWidgetConfig(),
+'ir_recent_procedure_forms': ir_widgets.ProcedureFormRecencyWidgetConfig(),
+'ir_recent_issue_forms': ir_widgets.IssueFormRecencyWidgetConfig(),
+'ir_recent_action_plan_forms': ir_widgets.ActionPlanFormRecencyWidgetConfig(),
+'ir_recent_reports': ir_widgets.ReportRecencyWidgetConfig(),
+'ir_assigned_requests': ir_widgets.AssignedRequestsWidgetConfig(),
+'ir_key_resources': ir_widgets.KeyResourcesWidgetConfig(),
+```
+
+**WARNING: Landing page widget keys are stored in the view-settings
+database.** The test at `test/unit/experience_registry_test.dart` line 53
+explicitly warns: "these values are committed to the view-settings database
+and changing them would result in broken landing page dashboards." Removing
+these keys means existing user dashboards that use these widgets will
+display errors. **This requires a data migration or graceful fallback.**
+
+---
+
+#### File 3: `wdesk/lib/src/ir_archive_mode_experience_registry.dart`
+
+**Line 6 -- REMOVE import:**
+```dart
+import 'package:w_sox/experience_configs.dart';
+```
+
+**Lines 14-21 -- REMOVE drawer experiences (7 references):**
+```dart
+ProjectFilesExperienceConfig(),
+OverviewExperienceConfig(),
+ReportListExperienceConfig(),
+DashboardListExperienceConfig(),
+DataDrawerExperienceConfig(),
+TextualQueryExperienceConfig(),
+DataModelExperienceConfig(),
+```
+
+**Lines 27-28 -- REMOVE embeddable experiences (2 references):**
+```dart
+createSampleSelectionExperienceConfig(),
+createTestFormSpreadsheetExperienceConfig(),
+```
+
+**Lines 32-40 -- REMOVE rich experiences (6 references):**
+```dart
+DashboardRichExperienceConfig(),
+EvidenceTestingExperienceConfig(),
+FocusExperienceConfig(),
+ReportExperienceConfig(),
+TestFormRichExperienceConfig(),
+GraphMarkupViewerExperienceConfig(),
+```
+
+**Post-removal state:** This class becomes nearly empty (only `audit`
+and non-w_sox experiences remain). **Consider whether archive mode needs
+its own MFE manifest variant** or whether the main graph_app MFE manifest
+can handle archive mode via query parameters (as it does today in
+`app/web/main.dart`).
+
+---
+
+#### File 4: `wdesk/lib/src/ir_draft_session_experience_registry.dart`
+
+**Line 5 -- REMOVE import:**
+```dart
+import 'package:w_sox/experience_configs.dart';
+```
+
+**Lines 20-28 -- REMOVE drawer experiences (8 references):**
+```dart
+OverviewExperienceConfig(),
+// (RequestListExperienceConfig is from request_portal, NOT w_sox -- KEEP)
+ReportListExperienceConfig(),
+DashboardListExperienceConfig(),
+DataDrawerExperienceConfig(isDraftSession: true),
+TextualQueryExperienceConfig(),
+DataModelExperienceConfig(),
+SupportExperienceConfig(),
+```
+
+**Lines 32-42 -- REMOVE rich experiences (8 references):**
+```dart
+FocusExperienceConfig(),
+FocusNewExperienceConfig(),
+RawGraphExperienceConfig(),
+ReportExperienceConfig(),
+DashboardRichExperienceConfig(),
+TestFormRichExperienceConfig(),
+ReportBuilderExperienceConfig(),
+TextualQueryEditExperienceConfig(),
+```
+
+**CRITICAL: `DataDrawerExperienceConfig(isDraftSession: true)`** -- this
+passes a constructor argument. The MFE manifest must support passing
+parameters to experiences for draft session mode, OR graph_app's MFE
+must detect draft session mode from the URL/environment and configure
+itself accordingly.
+
+---
+
+#### File 5: `wdesk/web/main.dart` (Web Entry Point)
+
+**Lines 10-12 -- REMOVE deferred imports:**
+```dart
+import 'package:w_sox/draft_edits_header.dart' deferred as draft_edits_header;
+import 'package:w_sox/graph_archive_header.dart'
+    deferred as graph_archive_header;
+```
+
+**Lines 15-18 -- REMOVE deferred registry imports:**
+```dart
+import 'package:wdesk/src/ir_archive_mode_experience_registry.dart'
+    deferred as ir_archive_registry;
+import 'package:wdesk/src/ir_draft_session_experience_registry.dart'
+    deferred as ir_draft_registry;
+```
+
+**Lines 58-63 -- REMOVE deferred library loading:**
+```dart
+if (isIrArchiveMode) {
+  await graph_archive_header.loadLibrary();
+}
+if (isIrDraftSessionMode) {
+  await draft_edits_header.loadLibrary();
+}
+```
+
+**Lines 83-91 -- REMOVE sidebar header setup:**
+```dart
+if (isIrArchiveMode) {
+  app.setPrimarySidebarHeader(graph_archive_header.createGraphArchiveHeader);
+}
+if (isIrDraftSessionMode) {
+  final header =
+      await draft_edits_header.createDraftEditsHeaderV2(app.appContext);
+  app.setPrimarySidebarHeader(() => header);
+}
+```
+
+**Lines 121-129 -- REMOVE/SIMPLIFY getExperienceRegistry():**
+```dart
+// CURRENT:
+Future<ExperienceRegistry> getExperienceRegistry() async {
+  if (isIrArchiveMode) {
+    await ir_archive_registry.loadLibrary();
+    return ir_archive_registry.IrArchiveModeExperienceRegistry();
+  } else if (isIrDraftSessionMode) {
+    await ir_draft_registry.loadLibrary();
+    return ir_draft_registry.IRDraftSessionExperienceRegistry();
+  }
+  return WdeskExperienceRegistry();
+}
+
+// TARGET:
+Future<ExperienceRegistry> getExperienceRegistry() async {
+  return WdeskExperienceRegistry();
+  // Archive/draft session modes now handled by graph_app MFE
+  // detecting the mode from URL query parameters and adjusting
+  // its experience set accordingly.
+}
+```
+
+**KEEP lines 40-55:** The `isGraphTestEnvironment` mock session setup
+must remain -- it's needed for graph_app functional testing against
+wdesk.
+
+**CRITICAL COMPLEXITY:** Archive mode and draft session mode currently
+use **different experience registries** that expose a **reduced subset**
+of graph experiences. Post-decoupling, graph_app's MFE must handle this
+internally -- detecting the mode from query parameters (`archiveMode`,
+`draftSession`) and filtering its own experience contributions
+accordingly.
+
+---
+
+#### File 6: `wdesk/web/headless.dart` (Headless Entry Point)
+
+**No w_sox imports to remove.** This file only references
+`isGraphTestEnvironment` from `utils.dart` and `WdeskExperienceRegistry`
+(which will be cleaned up in File 2).
+
+**KEEP:** The `isGraphTestEnvironment` block (lines 31-46) must remain.
+
+---
+
+#### File 7: `wdesk/lib/src/utils.dart` (Utility)
+
+**KEEP as-is:**
+```dart
+bool get isGraphTestEnvironment =>
+    Environment.current.testEnvironment == 'graph_app';
+```
+
+This flag is test infrastructure, not a production dependency. It
+enables wdesk to set up mock credentials when running graph_app's
+functional test suite. Removing it would break graph_app's CI.
+
+---
+
+#### File 8: `wdesk/test/unit/experience_registry_test.dart`
+
+**Line 5 -- REMOVE import:**
+```dart
+import 'package:w_sox/landing_page_widgets.dart' as ir_widgets;
+```
+
+**Lines 64-75 -- REMOVE all ir_widgets assertions:**
+```dart
+'ir_charts': ir_widgets.ChartWidgetConfig(),
+'ir_primary_data_types': ir_widgets.DataTypesWidgetConfig(),
+'ir_recent_test_forms': ir_widgets.TestFormRecencyWidgetConfig(),
+'ir_recent_audit_forms': ir_widgets.AuditFormRecencyWidgetConfig(),
+'ir_recent_procedure_forms': ir_widgets.ProcedureFormRecencyWidgetConfig(),
+'ir_recent_issue_forms': ir_widgets.IssueFormRecencyWidgetConfig(),
+'ir_recent_action_plan_forms': ir_widgets.ActionPlanFormRecencyWidgetConfig(),
+'ir_recent_reports': ir_widgets.ReportRecencyWidgetConfig(),
+'ir_assigned_requests': ir_widgets.AssignedRequestsWidgetConfig(),
+'ir_key_resources': ir_widgets.KeyResourcesWidgetConfig(),
+```
+
+**Update the test assertion count** to reflect the reduced number of
+widget configs after removing the 10 IR widgets.
+
+---
+
+#### File 9: `wdesk/.github/workflows/frontend-integration.yaml`
+
+**Lines 14-20 -- MODIFY (do not remove):**
+```yaml
+# CURRENT:
+integration-testing:
+  name: graph_app
+  steps:
+    - uses: Workiva/gha-integration-testing@v4.0.37
+      with:
+        consumer-repository: Workiva/graph_app
+        use-commit-from: release:latest
+
+# TARGET: Keep the integration test but update it to validate
+# that wdesk works correctly with the deployed graph_app MFE.
+# The exact configuration depends on whether gha-integration-testing
+# supports MFE-based consumer testing. If not, replace with a
+# Signals or smoke test that loads wdesk and verifies graph
+# experiences are available via the MFE path.
+```
+
+---
+
+### D.2 Summary: Reference Removal by Category
+
+| Category | Files | References Removed | Risk |
+|---|---|---|---|
+| **Imports** | 5 files | 7 import statements | [BREAKING] build fails if any missed |
+| **Drawer experiences** | 3 files | 24 instantiations | [BREAKING] nav items vanish |
+| **Rich experiences** | 3 files | 30 instantiations | [BREAKING] full-page views gone |
+| **Embeddable experiences** | 2 files | 4 factory calls | [BREAKING] embedded views gone |
+| **Landing page widgets** | 2 files | 20 widget configs | [HIGH] user dashboards break |
+| **Deferred libraries** | 1 file | 4 deferred imports + loads | [HIGH] archive/draft modes |
+| **Sidebar headers** | 1 file | 2 header setups | [MEDIUM] archive/draft mode headers |
+| **Registry selection** | 1 file | 1 function (getExperienceRegistry) | [HIGH] mode-specific registries |
+| **CI workflow** | 1 file | 1 integration test config | [MEDIUM] CI gate |
+| **Test assertions** | 1 file | 10 widget expectations | [LOW] test-only |
+| **Total** | **9 files** | **~103 references** | |
+
+---
+
+### D.3 How Routing Works Post-Decoupling
+
+This is the most important architectural question. Here's how it works:
+
+#### Current State: Compile-Time Routing
+
+```
+User navigates to /reports
+    |
+    v
+wdesk Router (w_router)
+    |
+    v
+ExperienceRegistry[routeSegment]
+    |  (lookup by route segment string)
+    v
+WdeskExperienceRegistry.drawerExperiences
+    |  (hardcoded list includes w_sox.ReportListExperienceConfig())
+    v
+ReportListExperienceConfig
+    |  routeSegment => GraphRoutePaths.reports => 'reports'
+    |  experienceFactory => deferred load ReportListExperience
+    v
+ReportListExperience renders
+```
+
+**Problem:** The config class is compiled into wdesk. Changing the route
+or the experience requires a wdesk release.
+
+#### Target State: MFE Manifest Routing
+
+```
+User navigates to /reports
+    |
+    v
+wdesk Router (w_router)
+    |
+    v
+RichExperienceRegistryShim (already exists in wdesk_sdk)
+    |
+    +---> Legacy lookup: WdeskExperienceRegistry[routeSegment]
+    |       (returns null -- w_sox configs removed)
+    |
+    +---> MFE lookup: RoutingContributionPoint[routeSegment]
+    |       (returns match from FEWS manifest)
+    |
+    v
+FEWS manifest declares:
+    core.routing:
+      - name: reports_route
+        details:
+          route_segment: reports
+          experience_name: w_sox.core.drawer_experiences.report_list
+    |
+    v
+MFE Extension (WsoxExtension) registered the contribution:
+    DrawerExperienceContributionHost(ReportListContribution())
+    |
+    v
+graph_app's JavaScript bundle loaded from CDN/FEWS
+    |
+    v
+ReportListExperience renders (same code, different loading path)
+```
+
+**Key insight:** `RichExperienceRegistryShim` in `wdesk_sdk` already
+merges compile-time and MFE experiences into a single routing table.
+When wdesk removes the compile-time `w_sox` configs, the shim simply
+resolves graph routes from the FEWS manifest instead. **No router
+changes needed in wdesk.**
+
+#### Route Segment Mapping (Complete)
+
+Every experience config in graph_app declares a `routeSegment`. These
+exact same strings must appear in the MFE manifest's `core.routing`
+section. Here is the complete mapping:
+
+**Drawer Experiences (left navigation):**
+
+| Experience Config | Route Segment | Nav Icon | Display Name |
+|---|---|---|---|
+| ResourceManagementExperienceConfig | `GraphRoutePaths.resourceManagementList` | `unify.calendarMonth` | Planning |
+| OverviewExperienceConfig | `testing` | `unify.science` | Testing |
+| ReportListExperienceConfig | `reports` | `unify.summarize` | Reports |
+| DashboardListExperienceConfig | `dashboards` | `unify.dashboard` | Dashboards |
+| DataDrawerExperienceConfig | `GraphRoutePaths.focusList` | `unify.database` | Data Types |
+| DataModelExperienceConfig | `GraphRoutePaths.dataModel` | `unify.accountTree` | Model |
+| SupportExperienceConfig | `GraphRoutePaths.support` | `unify.settings` | Support |
+| TextualQueryExperienceConfig | `GraphRoutePaths.textualQuery` | `unify.editSquare` | Textual Query |
+| ProjectFilesExperienceConfig | `GraphRoutePaths.projectFiles` | `unify.folder` | Project Files |
+
+**Rich Experiences (full-page views):**
+
+| Experience Config | Route Segment |
+|---|---|
+| FocusExperienceConfig | `GraphRoutePaths.focus` |
+| FocusNewExperienceConfig | `GraphRoutePaths.focusNew` |
+| ExportListExperienceConfig | `export_list` |
+| EvidenceTestingExperienceConfig | `evidence_testing` |
+| ReportExperienceConfig | `GraphRoutePaths.report` |
+| ReportBuilderExperienceConfig | `GraphRoutePaths.reportBuilder` |
+| DashboardRichExperienceConfig | `GraphRoutePaths.dashboard` |
+| TestFormRichExperienceConfig | `test_form` |
+| SamplingRichExperienceConfig | `select_samples` |
+| TextualQueryEditExperienceConfig | `GraphRoutePaths.textualQueryEdit` |
+| BulkTestFormImportExperienceConfig | `bulk_test_form_import` |
+| GraphAttachmentViewerExperienceConfig | `SoxRoutePaths.graphAttachmentViewer` |
+| GraphMarkupViewerExperienceConfig | `SoxRoutePaths.graphMarkupViewer` |
+| RawGraphExperienceConfig | `GraphRoutePaths.rawGraph` |
+| SuggestedPermissionsExperienceConfig | `suggested-permissions` |
+| ResourcePlanExperienceConfig | `GraphRoutePaths.plan` |
+
+**Note:** The actual string values for `GraphRoutePaths.*` constants live
+in `graph_ui/lib/src/utils/graph_route_paths.dart`. These must be
+resolved to literal strings when writing the manifest. Failing to match
+exactly will result in broken deep links.
+
+---
+
+### D.4 Archive Mode and Draft Session Mode
+
+This is the **hardest decoupling challenge**. Today, wdesk selects a
+different `ExperienceRegistry` based on the URL mode:
+
+```dart
+// wdesk/web/main.dart:121-130
+Future<ExperienceRegistry> getExperienceRegistry() async {
+  if (isIrArchiveMode) {
+    return IrArchiveModeExperienceRegistry();  // reduced set of w_sox configs
+  } else if (isIrDraftSessionMode) {
+    return IRDraftSessionExperienceRegistry(); // different reduced set
+  }
+  return WdeskExperienceRegistry();            // full set
+}
+```
+
+**What's different in each mode:**
+
+| Mode | Drawer Experiences | Rich Experiences | Special |
+|---|---|---|---|
+| **Normal** | All 9 + non-w_sox | All 16 + non-w_sox | Full feature set |
+| **Archive** | 7 (no ResourceMgmt, Support) | 6 (no Focus/New, Sampling, etc.) | Graph archive header sidebar |
+| **Draft Session** | 8 (includes Support, no ResourceMgmt) | 8 (includes Focus/New, no Sampling/Export) | Draft edits header sidebar |
+
+**Post-decoupling options:**
+
+**Option A: graph_app MFE handles mode internally (RECOMMENDED)**
+- graph_app's MFE entry point reads the mode from URL query parameters
+  (`?archiveMode=true`, `?draftSession=true`)
+- The `WsoxExtension.onRegisterContributions()` method conditionally
+  registers only the appropriate experiences for the detected mode
+- The sidebar header components (`graph_archive_header`,
+  `draft_edits_header`) become part of graph_app's MFE bundle
+- **Pro:** Clean separation. wdesk doesn't need to know about graph
+  modes.
+- **Con:** graph_app's MFE must be loaded before wdesk can determine
+  which sidebar header to show.
+
+**Option B: Multiple MFE manifests per mode**
+- Register separate MFE names: `w_sox`, `w_sox_archive`, `w_sox_draft`
+- Each has its own manifest with the appropriate subset of contributions
+- wdesk selects which MFE to load based on mode
+- **Pro:** Declarative. Each manifest is a complete specification.
+- **Con:** Three manifests to maintain. Version drift risk between them.
+
+**Option C: FEWS manifest supports conditional contributions**
+- If FEWS supports `can_user_access` expressions with mode conditions,
+  a single manifest could gate contributions by mode
+- **Pro:** Single manifest, declarative filtering
+- **Con:** Depends on FEWS capability that may not exist. Verify in
+  Phase 0.
+
+**Recommendation:** Option A. graph_app already detects these modes in
+its `app/web/main.dart`. Moving mode detection into the MFE entry point
+is a natural extension.
+
+---
+
+### D.5 Landing Page Widgets: The Data Migration Problem
+
+The 10 `ir_widgets.*` landing page widget configs use **string keys**
+stored in the view-settings database:
+
+```
+'ir_charts', 'ir_primary_data_types', 'ir_recent_test_forms',
+'ir_recent_audit_forms', 'ir_recent_procedure_forms',
+'ir_recent_issue_forms', 'ir_recent_action_plan_forms',
+'ir_recent_reports', 'ir_assigned_requests', 'ir_key_resources'
+```
+
+The test at `experience_registry_test.dart:53` explicitly warns:
+
+> "these values are committed to the view-settings database and changing
+> them would result in broken landing page dashboards"
+
+**Post-decoupling, these widgets must be contributed by graph_app's MFE
+manifest.** The manifest must use **the same string keys** so that
+existing user dashboard configurations continue to work.
+
+**How form_config / assessments_client handle this:**
+- They do NOT currently contribute landing page widgets via manifest
+- This may be a contribution type that FEWS manifest doesn't support yet
+
+**Action required:**
+1. Verify FEWS manifest supports `core.landing_page_widgets` (or
+   equivalent) contribution type
+2. If supported: graph_app's manifest declares widgets with the same
+   keys
+3. If NOT supported: the widgets must remain in wdesk temporarily, with
+   graph_app providing the widget implementation classes via a
+   lightweight pub package (not the full w_sox package). Or: push for
+   FEWS to support this contribution type before decoupling.
+
+---
+
+### D.6 Deferred Loading: What Moves to graph_app
+
+Two w_sox modules are loaded via Dart deferred imports in wdesk:
+
+1. **`graph_archive_header`** (`package:w_sox/graph_archive_header.dart`)
+   - Creates a sidebar header component for archive mode
+   - Called via `app.setPrimarySidebarHeader()`
+
+2. **`draft_edits_header`** (`package:w_sox/draft_edits_header.dart`)
+   - Creates a sidebar header component for draft session mode
+   - Called via `app.setPrimarySidebarHeader()`
+
+**Post-decoupling:** These headers must be contributed by graph_app's
+MFE. Options:
+- Register as MFE contributions under a `core.sidebar_header`
+  contribution point (if FEWS supports it)
+- Or: graph_app's MFE extension calls `app.setPrimarySidebarHeader()`
+  directly during initialization when it detects archive/draft mode
+
+---
+
+### D.7 wdesk Decoupling PR: File-by-File Change Spec
+
+Here is the exact PR diff specification for the wdesk decoupling:
+
+```
+wdesk/pubspec.yaml
+  - Remove w_sox dependency (lines 118-122)
+  - Run `dart pub get` to update lockfile
+
+wdesk/lib/src/experience_registry.dart
+  - Remove lines 20-21 (w_sox imports)
+  - Remove lines 62-63 (ResourceManagement, Overview)
+  - Remove lines 75-77 (ReportList, DashboardList, DataDrawer)
+  - Remove lines 80-81 (DataModel, Support)
+  - Remove lines 85-86 (TextualQuery, ProjectFiles)
+  - Remove lines 118-136 (all rich experiences)
+  - Remove lines 169-170 (embeddable experiences)
+  - Remove lines 194-205 (landing page widgets)
+  - Keep all non-w_sox experiences (audit, markup, viewer, etc.)
+  - Keep all non-ir_widgets landing page widgets (comments, tasker, esg)
+
+wdesk/lib/src/ir_archive_mode_experience_registry.dart
+  - Remove line 6 (w_sox import)
+  - Remove all w_sox config instantiations (lines 14-40)
+  - Keep audit and non-w_sox experiences
+  - If class becomes effectively empty, consider deleting the file
+    and removing archive mode registry selection from main.dart
+
+wdesk/lib/src/ir_draft_session_experience_registry.dart
+  - Remove line 5 (w_sox import)
+  - Remove all w_sox config instantiations (lines 20-42)
+  - Keep audit, request_portal, and grc_testing_client experiences
+  - If class becomes effectively empty, consider deleting the file
+
+wdesk/web/main.dart
+  - Remove lines 10-12 (deferred w_sox header imports)
+  - Remove lines 15-18 (deferred archive/draft registry imports)
+  - Remove lines 58-63 (deferred library loading)
+  - Remove lines 83-91 (sidebar header setup)
+  - Simplify getExperienceRegistry() to always return
+    WdeskExperienceRegistry() (lines 121-130)
+  - KEEP lines 40-55 (isGraphTestEnvironment mock session)
+
+wdesk/web/headless.dart
+  - No changes needed (no w_sox imports)
+  - KEEP isGraphTestEnvironment block
+
+wdesk/lib/src/utils.dart
+  - No changes needed
+  - KEEP isGraphTestEnvironment getter
+
+wdesk/test/unit/experience_registry_test.dart
+  - Remove line 5 (ir_widgets import)
+  - Remove lines 64-75 (ir_widgets assertions)
+  - Update expected widget count in test assertion (line 100)
+
+wdesk/.github/workflows/frontend-integration.yaml
+  - Modify to test against deployed MFE instead of compile-time dep
+  - Or replace with a smoke test that verifies graph experiences load
+```
+
+---
+
+### D.8 Routing Architecture Diagram: Before vs After
+
+```
+BEFORE (Compile-Time Bundled):
+==============================
+
+  wdesk build
+    |
+    +---> pubspec.yaml declares w_sox: ^10.4.29
+    |       |
+    |       +---> dart pub get pulls w_sox source
+    |       |
+    |       +---> dart2js compiles w_sox INTO wdesk bundle
+    |
+    +---> main.dart
+    |       |
+    |       +---> getExperienceRegistry()
+    |       |       |
+    |       |       +---> WdeskExperienceRegistry()
+    |       |               |
+    |       |               +---> w_sox.ReportListExperienceConfig()
+    |       |               +---> w_sox.DashboardListExperienceConfig()
+    |       |               +---> ... (25+ more)
+    |       |
+    |       +---> createApp(experienceRegistry: registry)
+    |               |
+    |               +---> Router builds lookup table from registry
+    |               +---> /reports -> ReportListExperienceConfig
+    |
+    +---> User navigates to /reports
+            |
+            +---> Router matches "reports" in compiled registry
+            +---> Experience renders from wdesk's JS bundle
+
+
+AFTER (MFE Manifest-Driven):
+=============================
+
+  graph_app build (INDEPENDENT)          wdesk build (INDEPENDENT)
+    |                                      |
+    +---> compile to JS                    +---> pubspec.yaml: NO w_sox
+    +---> publish to CDN                   +---> dart2js compiles WITHOUT w_sox
+    +---> deploy to FEWS with manifest     +---> WdeskExperienceRegistry() is
+    |                                      |     smaller (no graph experiences)
+    |                                      |
+    v                                      v
+  FEWS stores manifest:                  wdesk main.dart:
+    microfrontends:                        createApp(
+      w_sox:                                 experienceRegistry: registry,
+        extensions:                          manifestAppName: 'wdesk',
+          w_sox:                           )
+            contributions:                   |
+              core.routing:                  +---> createApp() calls FEWS API
+                - route_segment: reports     |      fews_client.getManifest('wdesk')
+                - route_segment: dashboards  |
+                ...                          +---> FEWS returns merged manifest
+                                             |     (includes graph_app's contributions)
+                                             |
+                                             v
+                                           RichExperienceRegistryShim
+                                             |
+                                             +---> Legacy: WdeskExperienceRegistry
+                                             |     (audit, markup, viewer only)
+                                             |
+                                             +---> MFE: RoutingContributionPoint
+                                             |     (graph experiences from manifest)
+                                             |
+                                             v
+                                           Merged routing table:
+                                             /reports -> MFE contribution
+                                             /dashboards -> MFE contribution
+                                             /audit -> Legacy compile-time
+                                             |
+                                             v
+                                           User navigates to /reports
+                                             |
+                                             +---> Router matches in MFE contributions
+                                             +---> Loads graph_app JS from CDN
+                                             +---> Experience renders
+```
+
+---
+
+### D.9 Post-Decoupling Deployment Independence
+
+After decoupling, the two repos deploy independently:
+
+```
+graph_app release cycle:         wdesk release cycle:
+  merge to master                  merge to master
+    |                                |
+    v                                v
+  GHA builds + tests               GHA builds + tests
+    |                                |
+    v                                v
+  CDN publish + FEWS deploy        CDN publish + FEWS deploy
+    |                                |
+    v                                v
+  pipeline_template.yaml:          wdesk's own pipeline:
+    wk-dev -> staging -> ...         wk-dev -> staging -> ...
+    |                                |
+    v                                v
+  graph_app in prod                wdesk in prod
+  (serves via CDN/FEWS)           (loads graph_app MFE at runtime)
+```
+
+**Key behavioral changes:**
+1. graph_app can ship a bug fix to production without waiting for a
+   wdesk release
+2. wdesk can ship non-graph changes without risk of graph_app regression
+3. graph_app version in each environment may differ from wdesk version
+4. Deep links to graph features work identically (same route segments)
+5. Bookmarks and saved URLs continue to work (routes unchanged)
+6. Browser back/forward navigation unchanged (client-side routing)
+
+**What could go wrong:**
+- **API contract drift:** If graph_app changes an experience's route
+  segment, existing deep links break. Mitigated by: route segments are
+  declared in graph_app (the MFE owns its routes), not in wdesk.
+- **Static asset version mismatch:** If graph_app's CDN assets are
+  updated but FEWS still serves old manifest. Mitigated by: FEWS and
+  CDN are updated atomically in the same pipeline stage.
+- **Cross-MFE communication:** If graph experiences communicate with
+  wdesk or other MFEs via the event bus, version mismatches could cause
+  protocol errors. Mitigated by: explicit API versioning on event bus
+  messages.
