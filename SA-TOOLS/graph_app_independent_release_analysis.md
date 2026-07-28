@@ -16,6 +16,12 @@
 - **The wdesk experience_registry.dart hardcodes ~25 w_sox experience configs**
   -- post-decoupling, these will be contributed dynamically via the MFE
   manifest (the form_config pattern), eliminating compile-time coupling.
+- **A proven migration skill exists**
+  ([`dart-experience-to-mfe`](https://github.com/Workiva/fef-ai/pull/25))
+  that provides step-by-step instructions, code templates, and adapter
+  patterns (`legacyDrawerExperienceFactoryAdapter`,
+  `legacyRichExperienceFactoryAdapter`) enabling incremental per-experience
+  migration behind LaunchDarkly flags -- significantly reducing big-bang risk.
 - **Sequencing is critical**: manifest migration and pipeline_template.yaml
   must land before the wdesk decoupling PR, with a dual-release overlap
   window where both paths work.
@@ -150,10 +156,15 @@ consumes. This is the contract surface:
 | MFE manifest | **Legacy app-style, not MFE contribution** | 2/10 |
 | Rollback capability | **None** | 0/10 |
 | Post-deploy verification | **No Signals plans** | 0/10 |
-| **Overall readiness** | | **4.5/10** |
+| Migration tooling | `dart-experience-to-mfe` skill available with templates and adapter pattern | 8/10 |
+| **Overall readiness** | | **4.9/10** |
 
 The build/test/publish side is mature. The promotion/deploy/verify side is
-entirely absent -- that's the work.
+entirely absent -- that's the work. However, the availability of the
+`dart-experience-to-mfe` skill with proven adapter patterns
+(`legacyDrawerExperienceFactoryAdapter`,
+`legacyRichExperienceFactoryAdapter`) and incremental LD-flagged rollout
+strategy significantly de-risks the MFE manifest migration (Phase 1).
 
 ---
 
@@ -308,10 +319,41 @@ dynamic contributions.**
 | **FEWS deploy** | Yes (wdesk app target) | Yes (wdesk app target) | Yes (wdesk app target) | Yes (wdesk app target) |
 | **CDN publishing** | Via build | Via build | Yes (gha-deploy-component) | Keep as-is |
 | **Docker image** | No | No | Yes (wdesk_sdk_app_server:3) | Keep as-is |
-| **Entry pattern** | `createMfe()` + `WdeskExtension` | `createMfe()` + `WdeskExtension` | `create_app.dart` (legacy) | Migrate to `createMfe()` |
+| **Entry pattern** | `createMfe()` + `WdeskExtension` | `createMfe()` + `WdeskExtension` | `create_app.dart` (legacy) | Migrate to `createMfe()` + `WsoxExtension` using `legacyDrawerExperienceFactoryAdapter` / `legacyRichExperienceFactoryAdapter` |
 | **Slack alerts** | `alert-form-config` | None | None | `alert-graph-app` |
 
-### C.2 Manifest Migration (Critical Path)
+### C.2 Pre-Work Assessment (from `dart-experience-to-mfe` skill)
+
+Before beginning migration, each experience must pass these checks:
+
+1. **`configurationData` must be typed as `String`** -- If the experience
+   uses `configurationData`, update it to accept/encode a `String` (via
+   JSON serialization). Update callsites from `navigator.goTo` to
+   `navigator.goToExperience` which enforces the `String` type.
+
+2. **Context menus must use `contextMenuManager.showContextMenu`** -- MFEs
+   don't share a `ContextMenuManager` with the main app, so the MFE must
+   explicitly call `show` after adding items.
+
+3. **Migrate `titleContextMenuGroups` to
+   `experienceContext.shell.setContextMenuGroups`** -- The legacy
+   `titleContextMenuGroups` API doesn't work in MFEs.
+
+4. **(Rich only) No embedding** -- If a rich experience embeds another
+   experience, it cannot be migrated to an MFE yet.
+
+5. **(Rich only) No key bindings dependency** -- MFE key bindings don't
+   appear in `KeybindingModal` and can collide with the main app.
+
+**Not a blocker:** `NotificationManager` is now exposed on `AppContext`
+for legacy microfrontends, so it no longer requires migration to
+`NotificationService`.
+
+**Action item:** Audit all 27 graph_app experience configs against these
+5 checks before starting code changes. Any failing check must be fixed
+first in a separate PR.
+
+### C.3 Manifest Migration (Critical Path)
 
 graph_app's current manifest is a bare app declaration:
 
@@ -322,112 +364,192 @@ app:
   name: w_sox_app
 ```
 
-It must become a full MFE manifest. Here's the skeleton modeled on
-form_config, covering all 27 experience contributions:
+It must become a full MFE manifest. Per the `dart-experience-to-mfe`
+skill, the new `manifest.yaml` goes in the **repository root** (not
+inside `app/web/`). A new `web/` directory is also created at the repo
+root for MFE entrypoints, alongside the existing `app/` directory during
+the transition period.
+
+Here's the skeleton using the **correct manifest format** from the skill,
+including `intl_message_name`/`default_text` for display names and
+`oauth2_scopes` on the extension:
 
 ```yaml
-# TARGET: app/web/manifest.yaml
+# TARGET: manifest.yaml (repository root)
 version: 1
 
 microfrontends:
   w_sox:
-    apps: [ wdesk ]
+    apps: [wdesk]
     extensions:
       w_sox:
-        entrypoint: w_sox_app.mfe.dart.js  # compiled MFE entry
+        entrypoint: main.dart.js  # compiled MFE entry from web/main.dart
+        oauth2_scopes:
+          # Populate from experience config oauth2Scopes getters
+          - iam|r
+          - w_sox|r
+          - w_sox|w
+          # ... additional scopes from all experiences
         contributions:
           # === Drawer Experiences (left nav) ===
           core.drawer_experiences:
             - name: resource_management
               details:
-                display_name: Resource Management
-                # Adjust access expression per your licensing model
+                display_name:
+                  intl_message_name: resourceManagement
+                  default_text: Planning
                 can_user_access: "ability.MODULE_GRAPH"
+                is_valid_landing_page: true
             - name: overview
               details:
-                display_name: Overview
+                display_name:
+                  intl_message_name: overview
+                  default_text: Testing
                 can_user_access: "ability.MODULE_GRAPH"
             - name: report_list
               details:
-                display_name: Reports
+                display_name:
+                  intl_message_name: reportList
+                  default_text: Reports
                 can_user_access: "ability.MODULE_GRAPH"
             - name: dashboard_list
               details:
-                display_name: Dashboards
+                display_name:
+                  intl_message_name: dashboardList
+                  default_text: Dashboards
                 can_user_access: "ability.MODULE_GRAPH"
             - name: data_drawer
               details:
-                display_name: Data
+                display_name:
+                  intl_message_name: dataDrawer
+                  default_text: Data Types
                 can_user_access: "ability.MODULE_GRAPH"
             - name: data_model
               details:
-                display_name: Data Model
+                display_name:
+                  intl_message_name: dataModel
+                  default_text: Model
                 can_user_access: "ability.MODULE_GRAPH"
             - name: support
               details:
-                display_name: Support
+                display_name:
+                  intl_message_name: support
+                  default_text: Support
                 can_user_access: "ability.MODULE_GRAPH"
             - name: textual_query
               details:
-                display_name: Textual Query
+                display_name:
+                  intl_message_name: textualQuery
+                  default_text: Textual Query
                 can_user_access: "ability.MODULE_GRAPH"
             - name: project_files
               details:
-                display_name: Project Files
+                display_name:
+                  intl_message_name: projectFiles
+                  default_text: Project Files
                 can_user_access: "ability.MODULE_GRAPH"
 
           # === Rich Experiences (full-page) ===
           core.rich_experiences:
             - name: export_list
               details:
-                display_name: Export List
+                display_name:
+                  intl_message_name: exportList
+                  default_text: Export List
+                can_user_access: true
             - name: focus
               details:
-                display_name: Focus
+                display_name:
+                  intl_message_name: focus
+                  default_text: Focus
+                can_user_access: true
             - name: focus_new
               details:
-                display_name: Focus New
+                display_name:
+                  intl_message_name: focusNew
+                  default_text: Focus New
+                can_user_access: true
             - name: bulk_test_form_import
               details:
-                display_name: Bulk Test Form Import
+                display_name:
+                  intl_message_name: bulkTestFormImport
+                  default_text: Bulk Test Form Import
+                can_user_access: true
             - name: sampling
               details:
-                display_name: Sampling
+                display_name:
+                  intl_message_name: sampling
+                  default_text: Sampling
+                can_user_access: true
             - name: report
               details:
-                display_name: Report
+                display_name:
+                  intl_message_name: report
+                  default_text: Report
+                can_user_access: true
             - name: dashboard_rich
               details:
-                display_name: Dashboard
+                display_name:
+                  intl_message_name: dashboardRich
+                  default_text: Dashboard
+                can_user_access: true
             - name: test_form
               details:
-                display_name: Test Form
+                display_name:
+                  intl_message_name: testForm
+                  default_text: Test Form
+                can_user_access: true
             - name: textual_query_edit
               details:
-                display_name: Textual Query Edit
+                display_name:
+                  intl_message_name: textualQueryEdit
+                  default_text: Textual Query Edit
+                can_user_access: true
             - name: evidence_testing
               details:
-                display_name: Evidence Testing
+                display_name:
+                  intl_message_name: evidenceTesting
+                  default_text: Evidence Testing
+                can_user_access: true
             - name: graph_attachment_viewer
               details:
-                display_name: Attachment Viewer
+                display_name:
+                  intl_message_name: graphAttachmentViewer
+                  default_text: Attachment Viewer
+                can_user_access: true
             - name: graph_markup_viewer
               details:
-                display_name: Markup Viewer
+                display_name:
+                  intl_message_name: graphMarkupViewer
+                  default_text: Markup Viewer
+                can_user_access: true
             - name: report_builder
               details:
-                display_name: Report Builder
+                display_name:
+                  intl_message_name: reportBuilder
+                  default_text: Report Builder
+                can_user_access: true
             - name: resource_plan
               details:
-                display_name: Resource Plan
+                display_name:
+                  intl_message_name: resourcePlan
+                  default_text: Resource Plan
+                can_user_access: true
             - name: raw_graph
               details:
-                display_name: Raw Graph
+                display_name:
+                  intl_message_name: rawGraph
+                  default_text: Raw Graph
+                can_user_access: true
             - name: suggested_permissions
               details:
-                display_name: Suggested Permissions
+                display_name:
+                  intl_message_name: suggestedPermissions
+                  default_text: Suggested Permissions
+                can_user_access: true
 
           # === Routing ===
+          # experience_name follows: <extension>.core.<type>.<simpleName>
           core.routing:
             - name: resource_management_route
               details:
@@ -435,7 +557,7 @@ microfrontends:
                 experience_name: w_sox.core.drawer_experiences.resource_management
             - name: overview_route
               details:
-                route_segment: overview
+                route_segment: testing
                 experience_name: w_sox.core.drawer_experiences.overview
             - name: report_list_route
               details:
@@ -446,40 +568,69 @@ microfrontends:
                 route_segment: dashboards
                 experience_name: w_sox.core.drawer_experiences.dashboard_list
             # ... additional routes for each experience
+            - name: report_route
+              details:
+                route_segment: report
+                experience_name: w_sox.core.rich_experiences.report
+            # ... additional rich experience routes
 
           # === Navigation Sidebar ===
+          # location: default@<sortOrder> from experience config
           core.navigation_sidebar:
             - name: resource_management
               details:
-                icon: unify.accountTree
-                text: Resource Management
+                icon: unify.calendarMonth
+                text:
+                  intl_message_name: planning
+                  default_text: Planning
                 url: resource-management
                 location: default@10
+            - name: overview
+              details:
+                icon: unify.science
+                text:
+                  intl_message_name: testing
+                  default_text: Testing
+                url: testing
+                location: default@11
             - name: reports
               details:
-                icon: unify.assessment
-                text: Reports
+                icon: unify.summarize
+                text:
+                  intl_message_name: reports
+                  default_text: Reports
                 url: reports
-                location: default@11
+                location: default@12
             - name: dashboards
               details:
                 icon: unify.dashboard
-                text: Dashboards
+                text:
+                  intl_message_name: dashboards
+                  default_text: Dashboards
                 url: dashboards
-                location: default@12
+                location: default@13
             # ... additional sidebar entries
 ```
 
-**Key notes:**
-- `can_user_access` expressions must match the current licensing/ability
-  checks in the experience config classes
-- Route segments must match what wdesk currently resolves (check
-  `w_router` config)
-- Sidebar `location` values control ordering -- must match current positions
-- The entrypoint file name changes from the app-style `main.dart` to
-  an MFE-style `w_sox_app.mfe.dart`
+**Key notes (updated per `dart-experience-to-mfe` skill):**
+- `manifest.yaml` goes in **repo root**, not `app/web/`
+- Display names use `intl_message_name` + `default_text` for i18n
+- `can_user_access` uses boolean expressions -- see
+  [can-user-access docs](https://github.com/Workiva/wdesk_sdk/blob/master/doc/microfrontends/can-user-access.md)
+- `experience_name` follows `<extension_name>.core.<type>.<simpleName>`
+- `oauth2_scopes` are declared on the extension, populated from the
+  experience config `oauth2Scopes` getters
+- Route segments must match the string values from `GraphRoutePaths.*`
+  constants in `graph_ui`
+- Sidebar `icon` uses `unify.<name>` prefix for Unify icons
+- Sidebar `location` values: `default@<sortOrder>` from experience config
 
-### C.3 Entry Point Migration
+### C.4 Entry Point Migration
+
+Per the `dart-experience-to-mfe` skill, the MFE entrypoint goes in a new
+**`web/`** directory at the package root (not inside `app/`). This
+simplifies build configuration and allows removing `app/` once all
+experiences are stable as MFEs.
 
 **Current** (`app/web/main.dart`):
 ```dart
@@ -491,27 +642,205 @@ void main() async {
 }
 ```
 
-**Target** (modeled on form_config/assessments_client):
+**Target** (`web/main.dart` -- new file in repo root `web/` dir):
 ```dart
 import 'package:wdesk_sdk/create_mfe.dart';
-import 'package:w_sox_app/build_meta.g.dart';
+import 'build_meta.g.dart'; // generated by wdesk_sdk_builders|mfe
 
-void main() async {
+Future<void> main() async {
   writeMfeBuildMetadataToWindow();
   await createMfe(
     assetLoader: assetLoader,
     intlName: 'w_sox',
     mfeName: 'w_sox',
   );
-  // Register extension with all experience contributions
   WsoxExtension(assetLoader);
 }
 ```
 
-A new `WsoxExtension` class extending `WdeskExtension` must be created,
-registering all contributions via `onRegisterContributions()`.
+**Notes:**
+- `build_meta.g.dart` is generated by `wdesk_sdk_builders|mfe` and
+  provides `assetLoader` and `writeMfeBuildMetadataToWindow`
+- The legacy `app/web/main.dart` is kept alongside during transition --
+  both paths must work simultaneously until wdesk decoupling is complete
 
-### C.4 pipeline_template.yaml for graph_app
+### C.5 Contribution Classes (per `dart-experience-to-mfe` skill)
+
+Each experience gets its own Contribution class using the adapter
+pattern. This is the key insight from the skill -- existing experience
+factories are wrapped rather than rewritten, enabling incremental
+migration.
+
+**Drawer experience example:**
+```dart
+import 'package:wdesk_sdk/experience_contributions.dart';
+
+class ReportListContribution extends DrawerExperienceContribution {
+  @override
+  String get extensionName => 'w_sox';
+
+  @override
+  String get simpleName => 'report_list';
+
+  @override
+  Future<DrawerExperience> openExperience() =>
+      legacyDrawerExperienceFactoryAdapter(
+        reportListExperienceFactory,  // existing factory
+        routeSegment: 'reports',
+        stylesheets: [
+          'packages/w_sox/src/reports/report_list.css',
+        ],
+      );
+}
+```
+
+**Rich experience example:**
+```dart
+import 'package:microfrontend/client_sdk.dart';
+import 'package:rich_experience_contribution/contribution.dart';
+import 'package:static_asset_loader/static_asset_loader.dart';
+import 'package:wdesk_sdk/legacy_rich_experience_adapter.dart';
+
+class ReportContribution extends RichExperienceContribution {
+  @override
+  String get extensionName => 'w_sox';
+
+  @override
+  String get simpleName => 'report';
+
+  @override
+  Future<String> createResource() async {
+    return 'create';
+  }
+
+  @override
+  Future<RichExperience> open(OpenArgs args) async {
+    final sal = services.get<StaticAssetLoader>();
+    await sal.loadAll([
+      'packages/w_sox/src/reports/report.css',
+    ]);
+    return legacyRichExperienceFactoryAdapter(
+      reportExperienceFactory,  // existing factory
+      shell: args.shell,
+      routeSegment: 'report',
+      resourceId: args.resourceId,
+      configurationData: args.configurationData,
+    );
+  }
+}
+```
+
+**Key adapter patterns:**
+- `legacyDrawerExperienceFactoryAdapter` -- wraps existing drawer
+  factories; avoids rewriting to `BasicDrawerExperience` during initial
+  migration (makes LaunchDarkly toggle easier)
+- `legacyRichExperienceFactoryAdapter` -- wraps existing rich factories
+  with the same benefit
+- `createResource()` -- required for rich experiences opened without a
+  resource ID; return a placeholder like `'create'` and handle in factory
+- Long-term: migrate away from adapters to native MFE base classes, but
+  defer until after the transition is stable
+
+### C.6 Extension Class
+
+A single `WsoxExtension` class registers all contributions:
+
+```dart
+import 'package:wdesk_sdk/experience_contributions.dart';
+
+class WsoxExtension extends WdeskExtension {
+  WsoxExtension(StaticAssetLoader assetLoader)
+      : super.withStaticAssetLoader(assetLoader, 'w_sox');
+
+  @override
+  void onRegisterContributions(RegisterContribution register) {
+    // Drawer experiences
+    register(DrawerExperienceContributionHost(
+        ResourceManagementContribution()));
+    register(DrawerExperienceContributionHost(OverviewContribution()));
+    register(DrawerExperienceContributionHost(ReportListContribution()));
+    register(DrawerExperienceContributionHost(
+        DashboardListContribution()));
+    register(DrawerExperienceContributionHost(DataDrawerContribution()));
+    register(DrawerExperienceContributionHost(DataModelContribution()));
+    register(DrawerExperienceContributionHost(SupportContribution()));
+    register(DrawerExperienceContributionHost(
+        TextualQueryContribution()));
+    register(DrawerExperienceContributionHost(
+        ProjectFilesContribution()));
+
+    // Rich experiences
+    register(RichExperienceContributionHost(ExportListContribution()));
+    register(RichExperienceContributionHost(FocusContribution()));
+    register(RichExperienceContributionHost(FocusNewContribution()));
+    // ... remaining 13 rich experiences
+  }
+}
+```
+
+**Incremental rollout strategy (from skill):** For repos with many
+experiences, migrate incrementally using multiple extensions:
+- Put in-progress MFEs in an extension controlled by a **LaunchDarkly
+  flag**
+- Put stable/finished MFEs in a separate "stable" extension not tied to
+  a flag
+- Each experience can have its own extension and LD flag for independent
+  rollout
+- This avoids big-bang risk and allows per-experience validation
+
+### C.7 Dependencies and Build Configuration
+
+**New dependencies for `pubspec.yaml`:**
+```yaml
+dependencies:
+  microfrontend:
+    hosted:
+      name: microfrontend
+      url: https://pub.workiva.org
+    version: ^1.5.0
+  rich_experience_contribution:
+    hosted:
+      name: rich_experience_contribution
+      url: https://pub.workiva.org
+    version: ^1.43.3
+
+dev_dependencies:
+  wdesk_sdk_builders:
+    hosted:
+      name: wdesk_sdk_builders
+      url: https://pub.workiva.org
+    version: ^2.1.29
+```
+
+**`build.yaml` changes:**
+1. Enable `wdesk_sdk_builders|mfe` to generate `build_meta.g.dart`
+   (see [configuration](https://github.com/Workiva/wdesk_sdk_builders#configuration-1))
+2. Add the MFE entrypoint to `build_web_compilers|entrypoint`:
+```yaml
+targets:
+  $default:
+    builders:
+      build_web_compilers|entrypoint:
+        generate_for:
+          - "test/**"
+          - "web/main.dart"  # MFE entrypoint
+```
+
+**Local serving** -- update `tool/dart_dev/config.dart`:
+```dart
+import 'package:dart_dev_workiva/dart_dev_workiva.dart';
+
+final config = {
+  ...workivaConfig,
+  'serve': MicrofrontendServeTool()
+    ..app = 'simple_mfe_app'
+    ..localMicrofrontends = ['w_sox']
+};
+```
+
+Run `ddev serve` and navigate to `localhost:8080` to test locally.
+
+### C.8 pipeline_template.yaml for graph_app
 
 Modeled directly on form_config's proven pattern:
 
@@ -939,7 +1268,7 @@ stages:
       - name: TransitionTicketsToClosed
 ```
 
-### C.5 Versioning and Channel Strategy
+### C.9 Versioning and Channel Strategy
 
 **Current:** `10.4.40` (semver, Rosie-bumped on each merge)
 
@@ -953,7 +1282,7 @@ well-managed. What changes is how consumers reference it:
 | CDN | `cdn-prod.wdesk.com/graph_app/<tag>` | No change |
 | FEWS | `deploy-to-fews` with manifest | No change (manifest content changes) |
 
-### C.6 Rollback Playbook
+### C.10 Rollback Playbook
 
 ```
 ROLLBACK PROCEDURE: graph_app Independent Release
@@ -998,6 +1327,8 @@ ROLLBACK PROCEDURE: graph_app Independent Release
 
 ### Phase 0: Preparation (No Code Changes)
 
+- [ ] **Install the MFE migration skill**: `pnpx skills add workiva/fef-ai`
+      to get the `dart-experience-to-mfe` skill for step-by-step guidance
 - [ ] **Create Slack channel** `#alert-graph-app` for pipeline notifications
 - [ ] **Create Signals test plans** for each environment (staging, pentest,
       sandbox, demo, APAC, EU, prod) -- reuse existing functional test suite
@@ -1009,33 +1340,62 @@ ROLLBACK PROCEDURE: graph_app Independent Release
       (drawer, rich, embeddable, routing, sidebar, landing page widgets)
 - [ ] **Document the experience config -> manifest contribution mapping** --
       map each of the 27 w_sox experience configs to its manifest declaration
+- [ ] **Audit all 27 experiences against pre-work checks** (see C.2):
+      configurationData typing, context menu API, titleContextMenuGroups
+      migration, rich experience embedding/key bindings constraints
+- [ ] **Create LaunchDarkly flags** for incremental MFE rollout -- one flag
+      per experience or per batch of related experiences
 
-### Phase 1: graph_app MFE Manifest (graph_app repo)
+### Phase 1: graph_app MFE Scaffolding (graph_app repo)
 
-- [ ] **Migrate `app/web/manifest.yaml`** from legacy app format to full MFE
-      contribution format (see C.2 skeleton)
-- [ ] **Create MFE entry point** (`app/web/w_sox_app.mfe.dart`) using
-      `createMfe()` pattern instead of `createApp()`
-- [ ] **Create `WsoxExtension`** class extending `WdeskExtension`, registering
-      all contributions via `onRegisterContributions()`
-- [ ] **Update `app/build.yaml`** to enable `wdesk_sdk_builders|mfe` builder
-      for the new entry point
-- [ ] **Test locally** that the MFE loads correctly in wdesk via FEWS override
-      URL: `https://wk-dev.wdesk.org/fews/v1/serve/wdesk+cdn-dev:graph_app@<BUILD_ID>`
-- [ ] **Verify all 27 experiences render** through the manifest path
+- [ ] **Add MFE dependencies to `pubspec.yaml`**: `microfrontend ^1.5.0`,
+      `rich_experience_contribution ^1.43.3` (deps),
+      `wdesk_sdk_builders ^2.1.29` (dev dep)
+- [ ] **Create `web/` directory** at repo root (alongside `app/`, not
+      replacing it) for MFE entrypoints
+- [ ] **Create `web/main.dart`** MFE entrypoint using `createMfe()` pattern
+      (see C.4)
+- [ ] **Create `manifest.yaml`** at repo root with full MFE contribution
+      format (see C.3 skeleton)
+- [ ] **Update `build.yaml`**: enable `wdesk_sdk_builders|mfe` builder and
+      add `web/main.dart` to `build_web_compilers|entrypoint` generate_for
+- [ ] **Configure local serving**: update `tool/dart_dev/config.dart` to use
+      `MicrofrontendServeTool` with `simple_mfe_app`
+
+### Phase 1b: Incremental Experience Migration (graph_app repo)
+
+Migrate experiences one at a time using the adapter pattern:
+
+- [ ] **Create Contribution classes** for each experience using
+      `legacyDrawerExperienceFactoryAdapter` (drawer) or
+      `legacyRichExperienceFactoryAdapter` (rich) -- see C.5
+- [ ] **Create `WsoxExtension`** class registering contributions via
+      `onRegisterContributions()` -- see C.6
+- [ ] **Start with 1-2 low-risk experiences** (e.g. `RawGraphExperience`,
+      `SuggestedPermissionsExperience`) behind a LaunchDarkly flag
+- [ ] **Test locally** via `ddev serve` at `localhost:8080`
+- [ ] **Verify mock auth works** -- check if `?mockAuth=true` is sufficient
+      or if custom `MockSession` env vars are needed (see skill Step 9)
+- [ ] **Validate via FEWS override URL** on wk-dev:
+      `https://wk-dev.wdesk.org/fews/v1/serve/wdesk+cdn-dev:graph_app@<BUILD_ID>`
+- [ ] **Repeat for all 27 experiences**, moving each to the "stable"
+      extension as it's validated
 
 ### Phase 2: Dual-Path Validation (Both Repos)
 
 - [ ] **Deploy graph_app as MFE to wk-dev** using the new manifest
 - [ ] **Verify wdesk still works with compile-time w_sox** (no regression)
 - [ ] **Verify wdesk works with manifest-contributed graph_app** (new path)
+- [ ] **Enable LaunchDarkly flags** for all migrated experiences on wk-dev
 - [ ] **Run full Skynet/functional test suite** against both paths
 - [ ] **Confirm feature parity** -- every experience accessible via both
       the old compile-time path AND the new MFE manifest path
+- [ ] **Test archive mode and draft session mode** -- verify graph_app MFE
+      detects mode from URL params and adjusts contributions accordingly
 
 ### Phase 3: pipeline_template.yaml (graph_app repo)
 
-- [ ] **Add `pipeline_template.yaml`** to graph_app repo (see C.4)
+- [ ] **Add `pipeline_template.yaml`** to graph_app repo (see C.8)
 - [ ] **Fill in Signals plan IDs** from Phase 0
 - [ ] **Register pipeline in rmconsole**
 - [ ] **Perform a dry-run promotion** through wk-dev -> staging -> pentest
@@ -1060,13 +1420,19 @@ ROLLBACK PROCEDURE: graph_app Independent Release
 
 - [ ] **Promote graph_app through its own pipeline** to production
 - [ ] **Merge wdesk decoupling PR** and promote through wdesk's pipeline
+- [ ] **Enable LaunchDarkly flags** for all experiences in production
 - [ ] **Monitor** for 1 week: Signals test results, error rates, user reports
-- [ ] **Remove any feature flags** used during the transition
+- [ ] **Remove LaunchDarkly flags** once stable
 - [ ] **Update documentation** and runbooks
 
 ### Phase 6: Cleanup
 
-- [ ] **Remove legacy `createApp()` entry point** if MFE path is sole path
+- [ ] **Remove legacy `app/` directory** once all experiences are stable as
+      MFEs and the `web/` entrypoint is the sole path
+- [ ] **Migrate away from adapter pattern** -- replace
+      `legacyDrawerExperienceFactoryAdapter` /
+      `legacyRichExperienceFactoryAdapter` with native MFE base classes
+      (`BasicDrawerExperience`, MFE `RichExperience`)
 - [ ] **Remove the Docker image build** if FEWS/CDN is the sole serving
       mechanism (assess if Docker is still needed for functional tests)
 - [ ] **Archive any wdesk-side code** that was solely for graph_app bundling
@@ -1078,30 +1444,50 @@ ROLLBACK PROCEDURE: graph_app Independent Release
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| MFE manifest doesn't support all contribution types (embeddable, landing page widgets) | Medium | [BREAKING] | Validate in Phase 0 before any code changes |
-| Dual-path period introduces subtle behavior differences | Medium | [HIGH] | Extensive Signals testing in Phase 2 |
+| MFE manifest doesn't support all contribution types (embeddable, landing page widgets) | Medium | [BREAKING] | Validate in Phase 0 before any code changes; check with `#support-frontend-architecture` |
+| Pre-work assessment failures block migration for some experiences | Medium | [HIGH] | Audit all 27 experiences against skill pre-work checks in Phase 0; budget time for `configurationData` typing, context menu API, and `titleContextMenuGroups` fixes |
+| Dual-path period introduces subtle behavior differences | Medium | [HIGH] | Extensive Signals testing in Phase 2; LaunchDarkly flags for per-experience rollback |
 | graph_app deploys ahead of wdesk, breaking contract | Low | [HIGH] | Semver enforcement; keep consumer integration test |
 | Rollback in one environment, graph_app version drift across environments | Medium | [MEDIUM] | Pipeline stages are sequential with gates |
 | 70+ dependency tree causes version conflicts when graph_app moves independently | Medium | [MEDIUM] | syncdeps workflow + semver audit already in place |
-| Team capacity -- migration spans multiple sprints | High | [MEDIUM] | Phase 0-1 can be done independently; Phase 4 is the big-bang |
+| Rich experience `createResource()` behavior differs from null-resourceId handling | Low | [MEDIUM] | Return `'create'` placeholder and update factory to treat it same as `null`; validate per skill guidance |
+| MFE key bindings collide with main app for rich experiences | Low | [MEDIUM] | Audit rich experiences for `KeyBindingManager` usage; accept isolation as documented limitation during transition |
+| Team capacity -- migration spans multiple sprints | High | [MEDIUM] | Incremental migration behind LD flags (from skill) reduces big-bang risk; Phase 0-1 can be done independently |
 
 ---
 
 ## Open Questions (Need Team Input)
 
 1. **Who registers the rmconsole pipeline?** graph_app team or release-eng?
-2. **Does FEWS manifest support embeddable experiences?** The form_config
-   manifest only shows drawer + rich + routing + sidebar. graph_app also
-   needs embeddable (createSampleSelectionExperienceConfig, etc.) and
-   landing page widgets.
-3. **Should the Docker image build be preserved?** It's used for functional
+2. **Does FEWS manifest support embeddable experiences?** The
+   `dart-experience-to-mfe` skill covers `core.drawer_experiences`,
+   `core.rich_experiences`, `core.routing`, `core.navigation_sidebar`,
+   `menu.menus`, and `core.drawer_composition` but does **not** mention
+   embeddable experiences (e.g. `createSampleSelectionExperienceConfig`,
+   `createTestFormSpreadsheetExperienceConfig`). These may require a
+   different contribution point or may not yet be supported -- verify
+   with `#support-frontend-architecture`.
+3. **Does FEWS manifest support landing page widgets?** The skill does
+   not cover `core.landing_page_widgets` or equivalent. The 10
+   `ir_widgets.*` configs use DB-stored string keys -- see D.5 for the
+   data migration problem. Check if this contribution type exists.
+4. **Should the Docker image build be preserved?** It's used for functional
    testing (Docker-based stack), but post-MFE migration the serving path
    is FEWS/CDN, not Docker/nginx.
-4. **Deployment window alignment:** form_config deploys demo/prod on
+5. **Deployment window alignment:** form_config deploys demo/prod on
    Mon-Thu at 8:50 PM CST. Should graph_app use the same windows or
    different ones to avoid collision?
-5. **`VerifySmithySucceeded` step:** graph_app uses GHA, not Smithy. Is
+6. **`VerifySmithySucceeded` step:** graph_app uses GHA, not Smithy. Is
    there a `VerifyGHASucceeded` equivalent for pipeline_template.yaml?
+7. **Pre-work assessment failures:** How many of the 27 experience
+   configs fail the pre-work checks from the skill (configurationData
+   typing, context menu API, titleContextMenuGroups, rich embedding/key
+   bindings)? This determines how much prep work is needed before
+   migration can begin.
+8. **`legacyAppInitializerAdapter` usage:** Does any graph_app
+   `DrawerExperienceConfig` override `appInitializer` for shared
+   resource setup? If so, it needs `legacyAppInitializerAdapter`
+   wrapping with a run-once guard (see skill docs).
 
 ---
 
