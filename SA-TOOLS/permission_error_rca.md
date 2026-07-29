@@ -7,7 +7,7 @@ type: NoSuchMethodError: method not found: 'toString' on null
 location: permission_actions.dart:46:118 — GetEntityPermissions.call
 ```
 
-Appears as a frontend crash but the root cause is a **mismatch between the backend response and frontend assumptions** during the null-safety migration.
+Appears as a frontend crash but the root cause is the **Policy Evaluator backend timing out under high-volume permission evaluation**, returning all-false results for entities it couldn't evaluate in time. The frontend then crashes because it doesn't handle this case.
 
 ---
 
@@ -177,23 +177,25 @@ Appears as a frontend crash but the root cause is a **mismatch between the backe
 
 ---
 
-## Comparison: Few Permissions vs. More Permissions
+## Why It Only Affects Certain Folders (Volume, Not Role Type)
+
+This is a **volume problem**, not a role-type problem. When a folder contains many files, `GetEntityPermissions` sends a large batch of entity IDs to `canMany`. The Policy Evaluator must evaluate `N entities x 4 actions` permission checks against the IAM database. Under high volume, the backend **times out before finishing** and returns incomplete/all-false results for entities it couldn't evaluate in time.
 
 ```
 ┌─────────────────────────────────────────┬──────────────────────────────────────────┐
-│      FEW PERMISSIONS (Works ✅)          │      MORE/COMPLEX PERMISSIONS (Crashes ❌)│
+│   SMALL FOLDER / FEW FILES (Works ✅)    │   LARGE FOLDER / MANY FILES (Crashes ❌)  │
 ├─────────────────────────────────────────┼──────────────────────────────────────────┤
 │                                         │                                          │
-│  User has "viewer" role on entity       │  User has scoped/granular roles only     │
-│                                         │  (e.g., entity.read, file.write,         │
-│                                         │   filesystem.files.list, etc.)           │
+│  canMany request:                       │  canMany request:                        │
+│  4 actions × 10 entities = 40 evals     │  4 actions × 500 entities = 2000 evals   │
+│  Backend completes within timeout ✅     │  Backend TIMES OUT before finishing ❌    │
 │                                         │                                          │
-│  Backend returns:                       │  Backend returns:                        │
+│  Backend returns real results:          │  Backend returns incomplete results:     │
 │  {                                      │  {                                       │
 │    deny: false,                         │    deny: false,                          │
-│    read: TRUE,  ◄── at least one TRUE   │    read: false,                          │
-│    write: false,                        │    write: false,                         │
-│    own: false                           │    own: false  ◄── ALL FALSE             │
+│    read: TRUE,  ◄── actual grant        │    read: false,  ◄── timed out, not     │
+│    write: false,                        │    write: false,     actually evaluated  │
+│    own: false                           │    own: false                            │
 │  }                                      │  }                                       │
 │                                         │                                          │
 │  Filtered set: {"read"}                 │  Filtered set: {} (EMPTY)                │
@@ -211,6 +213,10 @@ Appears as a frontend crash but the root cause is a **mismatch between the backe
 │                                         │  Bang (!) on null → 💥 CRASH             │
 └─────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
+
+### Customer Workaround
+
+Pull files out of the root of the affected folder to reduce the batch size, then re-attempt. This reduces the volume of permission evaluations so the backend can finish within its timeout window.
 
 ---
 
@@ -357,13 +363,36 @@ This service evaluates IAM policy rules stored in the IAM database:
 
 ## Root Cause Pinpointed
 
-### Where: The Conversion Layer (Frontend)
+### The Real Root Cause: Backend Timeout Under High Volume
 
 ```
-permission_actions.dart:46 — the bang (!) operator
+┌─────────────────────────────────────────────────────────────────────────┐
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                                                                   │  │
+│  │  ROOT CAUSE: Policy Evaluator backend times out when             │  │
+│  │  evaluating high-volume permission batches (large folders).      │  │
+│  │  Returns all-false for entities it couldn't finish evaluating.   │  │
+│  │                                                                   │  │
+│  │  CRASH SITE: permission_actions.dart:46 — bang (!) operator      │  │
+│  │  on the null return from entityPermissionFromAction(), which     │  │
+│  │  was introduced by the null-safety migration (commit 6a286652b) │  │
+│  │  and assumes the function never returns null.                    │  │
+│  │                                                                   │  │
+│  │  WHY NULL: entityPermissionFromAction() receives an empty        │  │
+│  │  ContentEntityActions({}) because all 4 basic actions came back  │  │
+│  │  false (timeout), falls through all if-branches, returns null.   │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
+│  The frontend's bang operator is the proximate cause of the crash,      │
+│  but the deeper issue is the backend's inability to handle large        │
+│  permission batches within its timeout window.                          │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why: Assumption Violated During Null-Safety Migration
+### Contributing Factor: Null-Safety Migration
 
 | Commit | Date | What Changed |
 |--------|------|-------------|
@@ -371,49 +400,7 @@ permission_actions.dart:46 — the bang (!) operator
 | `b86cec9f9` | Feb 6, 2026 | Changed `UpdatePermissionsMap` parameter to non-nullable |
 
 Before migration: `null` permission values were silently stored in the map.
-After migration: `!` operator assumes `entityPermissionFromAction()` never returns null — **wrong**.
-
-### The Backend's Role
-
-The backend is **behaving correctly** — it returns `allowed: false` for actions the user doesn't have. The problem is that:
-
-1. The **frontend only asks about 4 basic actions** (`deny`, `read`, `write`, `own`)
-2. Many roles grant **scoped actions** (like `entity.read`, `file.write`, `filesystem.files.list`) that don't include these 4 basic ones
-3. When a user has **only scoped/granular roles** on an entity, all 4 basic actions return `false`
-4. The frontend has **no fallback** for this case
-
-### The Real CRA (Critical Root Area)
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                                                                         │
-│  entityPermissionFromAction()  in content_migration_utils               │
-│  content_migration_utils.dart:109-126                                    │
-│                                                                         │
-│  This function can ONLY map to 4 enum values:                           │
-│    own / share / read / none                                            │
-│                                                                         │
-│  It returns NULL when none of the 4 basic actions match.                │
-│  The IAM system has 590+ possible actions (IamActions class),           │
-│  but this function only recognizes 4.                                   │
-│                                                                         │
-│  The FRONTEND (permission_actions.dart:46) then applies ! on the null.  │
-│                                                                         │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  PRIMARY: entityPermissionFromAction() returning null             │  │
-│  │           when ContentEntityActions has empty actions set         │  │
-│  │                                                                   │  │
-│  │  SECONDARY: permission_actions.dart:46 using ! instead of        │  │
-│  │             null-safe handling — introduced by null-safety        │  │
-│  │             migration commit 6a286652b                           │  │
-│  │                                                                   │  │
-│  │  ROOT: Mismatch between IAM's granular permission model          │  │
-│  │        (590+ actions) and the frontend's simplified model        │  │
-│  │        (4 basic actions)                                         │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
+After migration: `!` operator assumes `entityPermissionFromAction()` never returns null — wrong when the backend times out.
 
 ---
 
@@ -503,9 +490,9 @@ The problem is that `actions` is `{"deny":false, "read":false, "write":false, "o
 
 ---
 
-## Suggested Fix
+## Fix
 
-In `permission_actions.dart`, replace the bang operator with a null check:
+In `permission_actions.dart`, remove the bang operator and default to `WDataEntityPermission.none`:
 
 ```dart
 permissions.forEach((key, actions) {
@@ -517,14 +504,26 @@ permissions.forEach((key, actions) {
       cmc.ContentEntityActions(
           actions.keys.where((key) => actions[key]!).toSet()));
 
-  if (permission != null) {
-    stateMap[utils.getResourceIdFromKeyname(key)] = permission;
-  }
-  // If null, skip — user has no basic permission level on this entity
+  stateMap[utils.getResourceIdFromKeyname(key)] =
+      permission ?? WDataEntityPermission.none;
 });
 ```
 
-This treats unrecognized permission combinations as "no basic permission info" and skips them instead of crashing.
+### Why `none` instead of skipping
+
+Using `?? WDataEntityPermission.none` instead of a null check + skip because:
+
+1. **Prevents infinite refetch loops** — `folder_actions.dart:104` checks `permissionsMap.containsKey(folderResourceId)` and re-dispatches `GetEntityPermissions` if the key is missing. Skipping would leave the key absent, causing the same all-false `canMany` response forever.
+2. **Semantically correct** — IAM already answered: all 4 basic actions are `false`. That **is** `none`.
+3. **Downstream consumers expect it** — `entity_table.dart:113` and `selectors.dart:205` check for `WDataEntityPermission.none` to disable UI actions and set read-only state.
+
+### What this fix does NOT solve
+
+This is a **defensive frontend fix** — it prevents the crash and the refetch loop. The deeper issue (backend timing out under high-volume permission evaluation) remains and may need backend-side investigation (batching, pagination, or timeout tuning in the Policy Evaluator service).
+
+### PR
+
+https://github.com/Workiva/home/pull/18604
 
 ---
 
