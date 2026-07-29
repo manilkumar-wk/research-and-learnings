@@ -7,7 +7,7 @@ type: NoSuchMethodError: method not found: 'toString' on null
 location: permission_actions.dart:46:118 — GetEntityPermissions.call
 ```
 
-Appears as a frontend crash but the root cause is the **Policy Evaluator backend timing out under high-volume permission evaluation**, returning all-false results for entities it couldn't evaluate in time. The frontend then crashes because it doesn't handle this case.
+Appears as a frontend crash but the root cause is that **some entities have access only through modern granular/scoped roles** that don't include the 4 basic actions (`deny`, `read`, `write`, `own`) that Home's legacy permission probe asks for. The backend correctly returns all-false for these entities (no error, HTTP 200), and the frontend crashes because it doesn't handle this case.
 
 ---
 
@@ -177,46 +177,58 @@ Appears as a frontend crash but the root cause is the **Policy Evaluator backend
 
 ---
 
-## Why It Only Affects Certain Folders (Volume, Not Role Type)
+## Why It Only Affects Certain Folders
 
-This is a **volume problem**, not a role-type problem. When a folder contains many files, `GetEntityPermissions` sends a large batch of entity IDs to `canMany`. The Policy Evaluator must evaluate `N entities x 4 actions` permission checks against the IAM database. Under high volume, the backend **times out before finishing** and returns incomplete/all-false results for entities it couldn't evaluate in time.
+This is **not a backend error** — the Policy Evaluator returns HTTP 200 with correct results. Backend logs confirm normal processing:
 
 ```
-┌─────────────────────────────────────────┬──────────────────────────────────────────┐
-│   SMALL FOLDER / FEW FILES (Works ✅)    │   LARGE FOLDER / MANY FILES (Crashes ❌)  │
-├─────────────────────────────────────────┼──────────────────────────────────────────┤
-│                                         │                                          │
-│  canMany request:                       │  canMany request:                        │
-│  4 actions × 10 entities = 40 evals     │  4 actions × 500 entities = 2000 evals   │
-│  Backend completes within timeout ✅     │  Backend TIMES OUT before finishing ❌    │
-│                                         │                                          │
-│  Backend returns real results:          │  Backend returns incomplete results:     │
-│  {                                      │  {                                       │
-│    deny: false,                         │    deny: false,                          │
-│    read: TRUE,  ◄── actual grant        │    read: false,  ◄── timed out, not     │
-│    write: false,                        │    write: false,     actually evaluated  │
-│    own: false                           │    own: false                            │
-│  }                                      │  }                                       │
-│                                         │                                          │
-│  Filtered set: {"read"}                 │  Filtered set: {} (EMPTY)                │
-│                                         │                                          │
-│  ContentEntityActions({"read"})         │  ContentEntityActions({})                │
-│    .isViewer = true ✅                   │    .isOwner = false                      │
-│                                         │    .isEditor = false                     │
-│  entityPermissionFromAction() returns:  │    .isSharer = false                     │
-│    WDataEntityPermission.read ✅         │    .isViewer = false                     │
-│                                         │    .isDenied = false                     │
-│  Bang (!) succeeds                      │                                          │
-│                                         │  entityPermissionFromAction() returns:   │
-│                                         │    null ❌                                │
-│                                         │                                          │
-│                                         │  Bang (!) on null → 💥 CRASH             │
-└─────────────────────────────────────────┴──────────────────────────────────────────┘
+level: info — fielding HTTP permissions request
+level: info — POST /s/policy-evaluator/api/v1/canMany HTTP/1.1
+```
+
+The issue is that **some entities have access only through modern granular/scoped roles** (e.g. `entity.read`, `file.write`, `tasking.task.create`) that don't include the 4 basic coarse actions (`deny`, `read`, `write`, `own`) that Home's legacy permission probe asks for. The backend correctly returns `allowed: false` for all 4 — the user genuinely doesn't have those basic grants.
+
+**Why large folders surface it more:** More files in a folder = more entities in the batch = higher probability that at least one entity has only granular-role access. A small folder might not contain any such entities, so the crash never triggers.
+
+```
+┌──────────────────────────────────────────┬──────────────────────────────────────────┐
+│   ENTITY WITH COARSE ROLE (Works ✅)      │   ENTITY WITH GRANULAR-ONLY ROLES        │
+│                                          │   (Crashes ❌)                             │
+├──────────────────────────────────────────┼──────────────────────────────────────────┤
+│                                          │                                          │
+│  User has "resourceViewer" role          │  User has "reportingProjectOwner",       │
+│  which grants basic 'read' action        │  "taskAdmin", "customFieldAdmin" etc.    │
+│                                          │  These grant scoped actions only:        │
+│                                          │  entity.read, tasking.task.create, etc.  │
+│                                          │  NOT the basic read/write/own/deny       │
+│                                          │                                          │
+│  Backend returns (HTTP 200, correct):    │  Backend returns (HTTP 200, correct):    │
+│  {                                       │  {                                       │
+│    deny: false,                          │    deny: false,                          │
+│    read: TRUE,  ◄── coarse grant exists  │    read: false,  ◄── no coarse grant,   │
+│    write: false,                         │    write: false,     access is through   │
+│    own: false                            │    own: false        scoped actions only │
+│  }                                       │  }                                       │
+│                                          │                                          │
+│  Filtered set: {"read"}                  │  Filtered set: {} (EMPTY)                │
+│                                          │                                          │
+│  ContentEntityActions({"read"})          │  ContentEntityActions({})                │
+│    .isViewer = true ✅                    │    .isOwner = false                      │
+│                                          │    .isEditor = false                     │
+│  entityPermissionFromAction() returns:   │    .isSharer = false                     │
+│    WDataEntityPermission.read ✅          │    .isViewer = false                     │
+│                                          │    .isDenied = false                     │
+│  Bang (!) succeeds                       │                                          │
+│                                          │  entityPermissionFromAction() returns:   │
+│                                          │    null ❌                                │
+│                                          │                                          │
+│                                          │  Bang (!) on null → 💥 CRASH             │
+└──────────────────────────────────────────┴──────────────────────────────────────────┘
 ```
 
 ### Customer Workaround
 
-Pull files out of the root of the affected folder to reduce the batch size, then re-attempt. This reduces the volume of permission evaluations so the backend can finish within its timeout window.
+Pull files out of the root of the affected folder to reduce the batch size, then re-attempt. Fewer files = fewer entities in the `canMany` batch = lower chance of hitting an entity with granular-only access.
 
 ---
 
@@ -363,16 +375,19 @@ This service evaluates IAM policy rules stored in the IAM database:
 
 ## Root Cause Pinpointed
 
-### The Real Root Cause: Backend Timeout Under High Volume
+### The Real Root Cause: Legacy Coarse-Action Probe vs. Modern Granular Roles
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
 │  │                                                                   │  │
-│  │  ROOT CAUSE: Policy Evaluator backend times out when             │  │
-│  │  evaluating high-volume permission batches (large folders).      │  │
-│  │  Returns all-false for entities it couldn't finish evaluating.   │  │
+│  │  ROOT CAUSE: Home's legacy permission probe only asks for 4      │  │
+│  │  coarse actions (deny/read/write/own). Modern granular roles     │  │
+│  │  grant scoped actions (entity.read, file.write, etc.) that      │  │
+│  │  don't include these 4. The backend correctly returns all-false  │  │
+│  │  (HTTP 200, no error), but the frontend can't map this to a     │  │
+│  │  WDataEntityPermission value.                                    │  │
 │  │                                                                   │  │
 │  │  CRASH SITE: permission_actions.dart:46 — bang (!) operator      │  │
 │  │  on the null return from entityPermissionFromAction(), which     │  │
@@ -381,13 +396,15 @@ This service evaluates IAM policy rules stored in the IAM database:
 │  │                                                                   │  │
 │  │  WHY NULL: entityPermissionFromAction() receives an empty        │  │
 │  │  ContentEntityActions({}) because all 4 basic actions came back  │  │
-│  │  false (timeout), falls through all if-branches, returns null.   │  │
+│  │  false (correctly), falls through all if-branches, returns null. │  │
 │  │                                                                   │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                                                         │
-│  The frontend's bang operator is the proximate cause of the crash,      │
-│  but the deeper issue is the backend's inability to handle large        │
-│  permission batches within its timeout window.                          │
+│  The backend is behaving correctly. The mismatch is between Home's      │
+│  legacy 4-action permission model and IAM's modern granular role        │
+│  system. Large folders surface this more because they contain more      │
+│  entities, increasing the chance of hitting one with granular-only      │
+│  access.                                                                │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -400,7 +417,7 @@ This service evaluates IAM policy rules stored in the IAM database:
 | `b86cec9f9` | Feb 6, 2026 | Changed `UpdatePermissionsMap` parameter to non-nullable |
 
 Before migration: `null` permission values were silently stored in the map.
-After migration: `!` operator assumes `entityPermissionFromAction()` never returns null — wrong when the backend times out.
+After migration: `!` operator assumes `entityPermissionFromAction()` never returns null — wrong when an entity has only granular roles.
 
 ---
 
@@ -519,7 +536,7 @@ Using `?? WDataEntityPermission.none` instead of a null check + skip because:
 
 ### What this fix does NOT solve
 
-This is a **defensive frontend fix** — it prevents the crash and the refetch loop. The deeper issue (backend timing out under high-volume permission evaluation) remains and may need backend-side investigation (batching, pagination, or timeout tuning in the Policy Evaluator service).
+This is a **defensive frontend fix** — it prevents the crash and the refetch loop. The deeper architectural issue is that Home's legacy permission model only understands 4 coarse actions, while IAM's modern role system grants access through hundreds of scoped actions. A longer-term fix would be to either extend the permission probe to account for granular roles, or migrate to the newer entity-level permission model (as suggested by the `@Deprecated('use permissions on the entity instead')` annotation on the class).
 
 ### PR
 
