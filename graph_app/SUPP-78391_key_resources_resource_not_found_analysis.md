@@ -295,20 +295,14 @@ content-management / Landing Page owners already on the thread.
 
 ## Suggested reply
 
-> Agree this is worth GRC looking at in graph_app. `<Resource not
-> found>` is a catch-all when name enrichment fails (RIS error **or**
-> empty display name). Lack of access can produce it, but so can CM
-> `getFiles` misses under load — which fits verified perms, partial
-> recovery after rate-limit bumps, and alphabetical “frontier” after
-> sort.
+> First eliminate board-definition confusion: KR only resolves wurls on
+> the **board instance UserB opens**. If that still has Folder X while
+> Admin/Support Viewer show Folder Y, Resource not found about X is
+> expected — checking Y is the wrong object. Diff UserB’s loaded
+> `keyResources` vs the inspected board before more debugging.
 >
-> The June NNBD commit called out only migrated Key Resources **tests**,
-> not this mapping. Stronger lead: folder enrich from INTRISK-86141
-> concurrently paginates per folder (and may use a bad `kindFilter` on
-> cursor pages), which can explode `/api/v1/files/` traffic — consistent
-> with Splunk and with widgets still failing after quota message
-> disappeared.
->
-> Rate limits are a bandage; next step is fix/dedupe folder name
-> resolution in Key Resources + keep CM owners for remaining quota
-> behavior.
+> After sets match: `<Resource not found>` is still a catch-all (RIS
+> error / empty name / no access / CM miss). Folder enrich can amplify
+> `/api/v1/files/`; rate-limit bumps are a bandage. NNBD commit
+> `4a8ead9` was tests-only. Worth GRC + Landing Page + CM once #1 is
+> ruled out.
