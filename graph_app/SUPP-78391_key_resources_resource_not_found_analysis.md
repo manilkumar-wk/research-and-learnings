@@ -13,21 +13,111 @@ Key Resources folder widgets
 
 ## Verdict
 
-`<Resource not found>` is a **catch-all UI label** in graph_app, not a
-literal “object missing” or “no permission” signal. For this customer it
-most likely means **folder name enrichment failed** (Content Management
-`getFiles` miss / error / rate pressure), not that Joe lacks access.
+**First eliminate board-definition confusion** (see below): UserB may be
+resolving a **different Key Resources wurl list** than AdminA’s current
+board / Support Viewer. Until that is ruled out, permission checks on
+Folder Y can be looking at the wrong object.
 
-This is **unlikely to be caused by null-safety**. The cited commit
-[`4a8ead9`](https://github.com/Workiva/graph_app/commit/4a8ead937f9f4a333ff0f8a0ae35dad38c9e2a7f)
-only NNBD-migrated **tests** for Key Resources; production client
-behavior for the error string was already intentional.
+After that: `<Resource not found>` is still a **catch-all UI label** in
+graph_app (enrichment failure / empty name / RIS error / no access), not
+a precise signal. Rate-limit / folder-enrich amplification remains a
+strong secondary lead and is **not** mutually exclusive with stale board
+instances.
 
-There **is** a graph_app problem worth GRC attention: folder enrichment
-after INTRISK-86141 can **amplify** `getFiles` traffic (and may paginate
-incorrectly). Rate-limit bumps help partially (BC Capital Partners
-appeared after Tony’s increase) but do not fix the client request
-pattern. Hard to repro with fewer folders is expected.
+Null-safety / commit `4a8ead9` remains unlikely (test-only NNBD).
+
+---
+
+## Priority #1 — Board instance vs admin definition (eliminate first)
+
+### The confusion
+
+> AdminA pointed KR at Folder X (shared with UserB). Folder X is later
+> removed/restricted. AdminA edits the widget to Folder Y. Investigators
+> check Folder Y access for UserB and think the issue is mysterious —
+> but UserB may still be loading Folder X.
+
+That is **technically coherent** with how Key Resources works in
+graph_app:
+
+1. The widget persists **only wurls** in board widget consumer settings
+   (`keyResources`), not live folder metadata:
+
+```29:32:lib/src/landing_page_widgets/key_resources/models/key_resources_widget_state.sg.dart
+  Map<String, dynamic> toJson() => {'resourceWurl': resourceWurl.toString()};
+
+  factory KeyResource.fromJson(Map<String, dynamic> json) {
+    return KeyResource((b) => b..resourceWurl = Wurl.parse(json['resourceWurl'] as String));
+```
+
+2. On load, the module reads **that board instance’s**
+   `initialSettings['keyResources']`, then enriches names. It has no
+   link to “whatever Admin currently intends on another board doc.”
+
+```108:136:lib/src/landing_page_widgets/key_resources/key_resources_widget_module.dart
+    if (_initialSettings != null && _initialSettings![consumerSettingsKey] != null) {
+      final keyResourceStrings = _initialSettings![consumerSettingsKey] as String;
+      // ... parse wurls into _initialKeyResources ...
+    }
+    // ...
+    _store.dispatch(GetInitialResourcesAction(_initialKeyResources));
+```
+
+3. So UserB’s UI calls CM/RIS for **whatever wurls are on the board
+   document UserB actually opened**. If that document still lists Folder
+   X, `<Resource not found>` for X (restricted/deleted) is expected —
+   even while AdminA’s edited board shows Folder Y and UserB still has
+   access to Y.
+
+### What graph_app cannot prove alone
+
+Board **assignment / copy / live-update** semantics live in Landing
+Page / Home platform, not in this KR client. Support docs describe
+assigned boards as **view-only** for assignees; whether Admin edits
+**propagate live** to all assignees vs a **snapshot at assign/first
+use** must be confirmed with that team.
+
+Regardless of product semantics, the **diagnostic rule** holds: always
+compare **the wurls UserB’s session resolves** to **the wurls on the
+board definition you are inspecting** (Support Viewer / AdminA editor).
+If they differ, stop and fix that story before rate-limit or NNBD
+theories.
+
+### Already seen on SUPP-78391
+
+Zachary noted a “Client” folder contributing in Splunk that was **not**
+listed among resources on the Landing Page board in Support Viewer.
+That is exactly the class of mismatch #1 predicts (stale/other instance
+**or** expansion beyond the listed KR set — nested folder fetches /
+multi-widget dupes). Treat it as a prompt to reconcile IDs, not as
+proof of one root cause yet.
+
+### Elimination checklist (do this before more bug hunts)
+
+1. **As UserB**, open the failing board → DevTools/network: list every
+   folder/file id being name-resolved (or capture KR widget settings
+   payload / `keyResources` JSON for that board instance).
+2. **As AdminA / Support Viewer**, export the **same board id** UserB
+   has open (not “the template Admin is editing” if those differ).
+3. Diff wurl sets. If UserB has Folder X and Admin has Folder Y →
+   explain Resource not found via X; re-assign / re-publish / have UserB
+   open the updated board instance; retest.
+4. Confirm whether Admin edits to an assigned board are supposed to be
+   **live** for all assignees. If yes and IDs still diverge → platform
+   bug in assignment sync. If no (copy-on-assign) → expected product
+   behavior; document for Support.
+5. Only after sets match, resume rate-limit / enrich amplification /
+   permission history on **those** ids.
+
+### Suggested reply on the thread
+
+> Agree — #1 confusion to eliminate first. Key Resources only resolves
+> the wurls stored on the **board instance being viewed**. If UserB’s
+> instance still has Folder X while AdminA/Support Viewer show Folder Y,
+> Resource not found about X is legitimate and checking Y permissions is
+> the wrong object. Please confirm UserB’s loaded board id +
+> `keyResources` wurls vs the definition we’re inspecting before we go
+> deeper on CM quota / enrich bugs.
 
 ---
 
