@@ -354,9 +354,9 @@ in `test/unit/common/experiences/graph_report/report_toolbar_test.dart`.
 
 ---
 
-## 10. Handoff checklist for the QA team
+## 10. Suggested reading order
 
-- [ ] Read section 2 to understand the automation test-ids exposed by the
+- [ ] Read section 2 to learn the automation test-ids exposed by the
       toolbar. These are the primary anchors for any new automation.
 - [ ] Skim section 3 — this is the click-flow contract. Any regression in
       the create dropdown will show here first.
@@ -364,8 +364,8 @@ in `test/unit/common/experiences/graph_report/report_toolbar_test.dart`.
       version bump should be validated against these tests.
 - [ ] Run the local commands in section 8.1 once to make sure your
       environment can generate line coverage.
-- [ ] Review section 9 with dev. If they agree, the six gaps make a good
-      first PR series for the QA team to own.
+- [ ] Review section 9. The six gaps make a good first PR series for
+      whoever picks them up.
 - [ ] After the six gaps are closed, all three chart types should be at
       100 % scenario coverage across all six layers.
 
