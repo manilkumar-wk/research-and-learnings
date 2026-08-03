@@ -12,6 +12,69 @@
 
 ---
 
+## Executive Summary
+
+> **Q:** *The Pres team recently helped to create the Builder Visual
+> options for Charts in GRC Workspaces. What type of test coverage
+> (unit, functional, etc.) currently exists for these features?*
+
+We have **four layers** of test coverage for the chart creation features
+today:
+
+### 1. Unit Tests — Strong coverage
+- **Toolbar dropdown click** — Tests that clicking Bar/Pie in the Report
+  toolbar dispatches the correct `PlotType`. Scatter click test is
+  **missing**.
+- **Report store integration** — Tests that creating a chart from a
+  table copies columns, filters, and assigns the correct `PlotType` for
+  **all 3 types** (bar, pie, scatter).
+- **Chart loader factory** — Tests that `ChartLoader.forChartType()`
+  routes to the correct renderer for **all 3 types**.
+- **Per-type loader & writer tests** — Deep config tests for **all 3
+  types** (Highcharts options, axis setters, color/gradient, labels,
+  legend).
+- **Insert widget (dashboard)** — Tests that the dashboard
+  "Insert Widget" chart-type dropdown dispatches correctly for **all 3
+  types**.
+- **Shared chart surface** — 60+ tests covering chart store, edit panel,
+  format pane, preview, image export, event listeners, and content view
+  rendering (bar and pie only — **scatter render test missing**).
+
+### 2. Functional (E2E / Puppeteer) Tests — Limited
+- **Report chart creation** — One scenario: create a **Bar** chart, set
+  axes, save as view, apply filter. **No Pie or Scatter scenario.**
+- **Dashboard chart widget** — One scenario: insert a new **Bar** chart
+  widget. **No Pie or Scatter scenario.**
+
+### 3. What's NOT Covered
+- **No dedicated tests** for: chart context menus (right-click
+  Export/Drill Down), `HighchartContentView` (the Highcharts rendering
+  wrapper), `ChartLabelOptions`, `ChartDataPane`, chart undo/redo
+  operations (`SetPlotTypeOp`/`SetDataSourceOp`), or `panel_options`.
+- **No signal tests** specific to chart creation were found.
+
+### 4. At a Glance
+
+| Test type | Bar | Pie | Scatter |
+|-----------|:---:|:---:|:-------:|
+| Unit — toolbar click | ✅ | ✅ | ❌ |
+| Unit — store / loader / writer | ✅ | ✅ | ✅ |
+| Unit — component render | ✅ | ✅ | ❌ |
+| Unit — insert widget | ✅ | ✅ | ✅ |
+| Functional E2E (report) | ✅ | ❌ | ❌ |
+| Functional E2E (dashboard) | ✅ | ❌ | ❌ |
+| Context menu / undo-redo | ❌ | ❌ | ❌ |
+
+**Bottom line:** Unit-level coverage is solid for the core chart pipeline
+(loaders, writers, store) across all three types. The main gaps are
+(1) Scatter at the toolbar-click and component-render layers, (2) Pie
+and Scatter in functional E2E tests, and (3) no dedicated tests for the
+context menu, rendering wrapper, or undo/redo operations. We've
+documented **13 specific gaps** with prioritized effort estimates in
+[section 12](#12-gaps-and-suggested-new-tests) below.
+
+---
+
 ## 1. TL;DR
 
 | Layer                                         | Bar | Pie | Scatter | Layer % |
