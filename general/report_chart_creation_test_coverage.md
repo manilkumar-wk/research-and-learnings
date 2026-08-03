@@ -1,8 +1,8 @@
-# Report chart creation — test coverage handoff
+# Report chart creation — test coverage
 
 **Feature:** the `Chart` dropdown on the Report toolbar (Bar / Pie / Scatter).
 **Repo:** [Workiva/graph_app](https://github.com/Workiva/graph_app)
-**Audience:** new QA team joining the reports experience.
+**Audience:** QA and dev working on the reports experience.
 **Prepared:** 2026-08-03.
 
 > **Note on percentages.** Numbers in this document are **feature/scenario
