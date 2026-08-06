@@ -29,6 +29,10 @@
 - Removed tickets that were **Done / Merged / Closed** before **2026-07-01**.
 - Removed all tickets with status **New**.
 - Merged tickets using last updated date: FPLAT-2985, INTRISK-101696, INTRISK-102507, INTRISK-102847, INTRISK-103127, INTRISK-103637
+- Compared with sprint JQL for **Forms Toolbox 2026 Q3.2** and **Q3.3** (status In Progress/Done/Closed/Merged).
+- Q3.2 returned 2 tickets (both already in report): FPLAT-2692, INTRISK-103637.
+- Q3.3 returned 0 tickets.
+- Nothing missing to add.
 - Closed/Done without resolution date (used updated): INTRISK-102932
 
 ### Removed tickets (completed before July)
