@@ -4,9 +4,9 @@
 **Criteria:** Tickets updated or resolved in July 2026, excluding tickets Completed (Done/Merged/Closed) before 2026-07-01  
 **Storypoints Estimated:** Effort Points field  
 **Done / Merged / Closed Date:** Resolution date for Closed/Done; for Merged (no resolution date in Jira), last updated date is used  
-**Total tickets:** 41  
+**Total tickets:** 38  
 **Removed (completed before July):** 12  
-**Removed (UpNext + New):** 2
+**Removed (status New):** 5
 
 | Jira Id | Summary | Sprint Details | Storypoints Estimated | Status | Done / Merged / Closed Date |
 |---|---|---|---|---|---|
@@ -34,7 +34,6 @@
 | INTRISK-102863 | [Critical]  2 CVEs in workiva/form_service | Forms Toolbox 2026 Q3.1 | — | Done | 2026-07-15 |
 | INTRISK-102880 | Add Canada region (prod-ca) CloudFormation configuration | Forms Toolbox 2026 Q2.6 | — | Closed | 2026-07-01 |
 | INTRISK-102954 | Risks and Controls Column Management unresponsive | Forms Toolbox 2026 Q2.6 | — | Closed | 2026-07-02 |
-| INTRISK-102966 | Prod Support - Graph Admin Revert Failing for Federal Mogul Motorparts LLC (RemainCo - Audit) | — | — | New | — |
 | INTRISK-103023 | [Critical]  1 CVEs in workiva/w_office_online_frame | Forms Toolbox 2026 Q3.3 | — | Done | 2026-07-15 |
 | INTRISK-103034 | [Critical]  8 CVEs in workiva/graph_printing_orchestrator | Forms Toolbox 2026 Q3.3 | — | Done | 2026-07-16 |
 | INTRISK-103278 | Testing-QA for FEDX-6392 | Forms Toolbox 2026 Q3.1 | — | In Progress | — |
@@ -46,8 +45,6 @@
 | INTRISK-103870 | Update check-prs.yaml | — | — | Closed | 2026-07-27 |
 | INTRISK-103872 | Update check-prs.yaml | — | — | Closed | 2026-07-23 |
 | INTRISK-103979 | Prod Support: experiences are not loading(left menu) | Forms Toolbox 2026 Q3.2 | 3 | Closed | 2026-07-27 |
-| INTRISK-104008 | Risk & Control Hide and Manage Columns Not Working | — | — | New | — |
-| INTRISK-91433 | Check on outstanding LD flags | Forms Toolbox 2026 Q2.4 | 1 | New | — |
 | INTRISK-95352 | Bump golang.org/x/crypto from 0.35.0 to 0.45.0 in the go_modules group across 1 directory in Workiva/publishing-service-api-go | Forms Toolbox 2025 Q4.3 | 1 | Closed | 2026-07-10 |
 | INTRISK-97152 | Bump lodash from 4.17.21 to 4.17.23 in the npm_and_yarn group across 1 directory in Workiva/w-audit-app | Forms Toolbox 2026 Q1.2 | 1 | Closed | 2026-07-14 |
 | INTRISK-98310 | Semgrep: [warning] Vulnerability found in graph_app | Forms Toolbox 2026 Q3.2 | 1 | Closed | 2026-07-28 |
@@ -55,8 +52,7 @@
 ### Notes
 
 - Removed tickets that were **Done / Merged / Closed** before **2026-07-01** (completed in June or earlier).
-- Removed tickets in **UpNext** sprint with status **New**.
-- Open statuses (**New**, **Open**, **In Progress**) have no Done/Merged/Closed date and are kept (except UpNext + New).
+- Removed all tickets with status **New** (including UpNext): INTRISK-102966, INTRISK-102967, INTRISK-103320, INTRISK-104008, INTRISK-91433.
 - **Merged** tickets do not set Jira `resolutiondate` (Merged is an in-progress workflow status). Date shown is the ticket’s last **updated** date.
 - Merged tickets using last updated date: INTRISK-101883, INTRISK-102643, INTRISK-103359
 - Closed/Done without resolution date (used updated): INTRISK-100053
