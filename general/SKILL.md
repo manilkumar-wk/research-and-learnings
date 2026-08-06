@@ -1,11 +1,12 @@
 ---
 name: monthly-jira-work-report
 description: >-
-  Build a monthly Jira work report for manil.kumar (or a given user) from
-  Workiva Jira: tickets updated/resolved in a month, with sprint, Effort
-  Points, status, and Done/Merged/Closed dates; write a markdown report and
-  generic JQL. Use when the user asks for a monthly Jira report, July/August
-  (etc.) tickets worked, story points report, or monthly Jira JQL.
+  Build a monthly Jira work report for a person (self or teammate) from Workiva
+  Jira: tickets updated/resolved in a month, with sprint, Effort Points, status,
+  and Done/Merged/Closed dates; write markdown + CSV and generic JQL. Use when
+  the user asks for a monthly Jira report for themselves or a team member by
+  name/username, July/August (etc.) tickets worked, story points report, or
+  monthly Jira JQL.
 ---
 
 # Monthly Jira Work Report
@@ -14,15 +15,31 @@ Generate a monthly work report from Workiva Jira (`jira.atl.workiva.net`) via th
 
 ## Inputs
 
-Ask only if missing:
-
-| Input | Default |
-|---|---|
-| Month / year | Required (e.g. July 2026) |
-| Jira username | `manil.kumar` |
-| Output path | `<workspace>/<yyyy>-<mm>-jira-work-report.md` |
+| Input | Required | Default / notes |
+|---|---|---|
+| Month + year | Yes | e.g. July 2026 |
+| Person | No | Default `manil.kumar`. Accept **Jira username** (`jane.doe`) **or display name** (`Jane Doe`) |
+| Output formats | No | Markdown + CSV |
+| Extra filters | No | Same defaults as below unless user overrides |
 
 Month window: `start = YYYY-MM-01`, `end = last day of month`.
+
+### Resolve teammate identity
+
+If the user gives a display name (not `first.last`):
+
+1. Call Atlassian MCP `jira_search_users` with that name.
+2. Pick the matching active Workiva user; confirm username if ambiguous.
+3. Use the returned **username** (`name` field) in all JQL (`assignee = <username>`).
+
+If they give a username already, use it directly.
+
+Output paths (include username so team reports don’t collide):
+
+- `<workspace>/<yyyy>-<mm>-jira-work-report-<username>.md`
+- `<workspace>/<yyyy>-<mm>-jira-work-report-<username>.csv`
+
+For the default user `manil.kumar`, also allow short names `july-2026-jira-work-report.md` / `.csv` if the user prefers.
 
 ## Field mapping (Workiva)
 
@@ -42,8 +59,8 @@ Parse sprint names from Greenhopper strings with `name=...`.
 | Status | Date source |
 |---|---|
 | Closed, Done | `resolutiondate` (fallback: `updated` if null) |
-| Merged | `updated` (Merged has no resolutiondate; status category is In Progress) |
-| New, Open, In Progress, etc. | `—` |
+| Merged | `updated` (Merged has no resolutiondate) |
+| New, Open, In Progress, Ready For Test, etc. | `—` |
 
 ## Workflow
 
@@ -54,57 +71,38 @@ Search with Atlassian MCP `jira_search_issues`. Paginate if `total > returned`.
 Union of:
 
 ```jql
-assignee = <user> AND updated >= "<start>" AND updated <= "<end>" ORDER BY key ASC
+assignee = <username> AND updated >= "<start>" AND updated <= "<end>" ORDER BY key ASC
 ```
 
 ```jql
-assignee = <user> AND resolved >= "<start>" AND resolved <= "<end>" ORDER BY key ASC
+assignee = <username> AND resolved >= "<start>" AND resolved <= "<end>" ORDER BY key ASC
 ```
 
 Fields: `summary`, `status`, `resolutiondate`, `updated`, `customfield_10214`, `customfield_12020`.
 
 Do **not** use `assignee was ... DURING` alone — it returns hundreds of stale assigned tickets.
 
-Do **not** rely on a saved filter unless the user confirms it matches the month.
-
 ### 2. Apply default filters
 
 1. Drop tickets **Closed / Done / Merged** with completion date **before** month start.
 2. Drop status **New**.
-3. Drop **UpNext** sprint + status New (redundant if New is dropped; keep for clarity).
-4. Keep Open / In Progress unless the user asks to remove them.
+3. Drop **UpNext** sprint + status New (redundant if New is dropped).
+4. Keep Open / In Progress / Ready For Test unless the user asks to remove them.
 
-Confirm remaining counts with the user if they want further cuts.
+### 3. Write markdown + CSV
 
-### 3. Write markdown report
+Markdown columns:
 
-Write `<yyyy>-<mm>-jira-work-report.md`:
+`Jira Id | Summary | Sprint Details | Storypoints Estimated | Status | Done / Merged / Closed Date`
 
-```markdown
-# <Month YYYY> Jira Work Report
+CSV: same columns, empty string instead of `—`.
 
-**Assignee:** <user>
-**Criteria:** Tickets updated or resolved in <Month YYYY>, excluding Completed before <start>, excluding status New
-**Storypoints Estimated:** Effort Points field
-**Done / Merged / Closed Date:** Resolution date for Closed/Done; Merged uses last updated
-**Total tickets:** <n>
-
-| Jira Id | Summary | Sprint Details | Storypoints Estimated | Status | Done / Merged / Closed Date |
-|---|---|---|---|---|---|
-| ... | ... | ... | ... | ... | ... |
-
-### Notes
-- ...
-```
-
-Use `—` for empty sprint / points / date.
+Header must show **Assignee:** `<username>` (and display name if known).
 
 ### 4. Provide generic JQL
 
-Always return a **generic** (no `key in (...)`) JQL the user can paste into Jira:
-
 ```jql
-assignee = <user>
+assignee = <username>
 AND status not in (New)
 AND (
   (
@@ -118,7 +116,7 @@ AND (
     AND updated <= "<end>"
   )
   OR (
-    status in (Open, "In Progress")
+    status in (Open, "In Progress", "Ready For Test")
     AND updated >= "<start>"
     AND updated <= "<end>"
   )
@@ -126,22 +124,18 @@ AND (
 ORDER BY key ASC
 ```
 
-If the user asked to exclude Open / In Progress, drop that OR branch.
-
-Also offer a key-based JQL only if they explicitly ask for keys.
-
-### 5. Optional canvas
-
-If useful, also create a canvas table under the workspace `canvases/` folder. Markdown report is required.
+Drop Open / In Progress / Ready For Test branch if the user asked to exclude incomplete work.
 
 ## Example prompts
 
 - "July 2026 Jira work report"
-- "Monthly Jira report for August 2026"
-- "Same report for September for manil.kumar"
+- "August 2026 Jira report for jane.doe"
+- "Monthly Jira report for July 2026 for Jane Doe"
+- "Same report for September for my teammate Alex Smith"
 
 ## Constraints
 
 - Prefer Effort Points over Original story points.
-- Prefer markdown in the workspace; do not commit unless asked.
+- Prefer markdown + CSV in the workspace; do not commit unless asked.
 - Do not invent completion dates; document Merged / missing-resolution fallbacks in Notes.
+- One person per report run (or run sequentially if the user lists multiple teammates).
