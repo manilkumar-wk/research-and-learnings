@@ -65,17 +65,17 @@ AND (
   (
     status in (Closed, Done, Resolved)
     AND resolved >= "2026-07-01"
-    AND resolved <= "2026-07-31"
+    AND resolved < "2026-08-01"
   )
   OR (
     status = Merged
     AND updated >= "2026-07-01"
-    AND updated <= "2026-07-31"
+    AND updated < "2026-08-01"
   )
   OR (
     status in (Open, "In Progress", "Ready For Test")
     AND updated >= "2026-07-01"
-    AND updated <= "2026-07-31"
+    AND updated < "2026-08-01"
   )
 )
 ORDER BY key ASC
