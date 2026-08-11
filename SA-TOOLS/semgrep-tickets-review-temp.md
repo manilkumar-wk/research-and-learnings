@@ -85,5 +85,3 @@ Keep open: 64
 - **No duplicates closed** — each ticket maps to a unique alert URL and a unique repo+file+line fingerprint.
 - Multi-ticket repos (ts-grc, grc-evergreen, audit, etc.) are **distinct findings** (different files/lines/rules), not duplicates.
 - 42 tickets share the same *pattern* (`.github/workflows/check-prs.yaml:13` + `secrets-inherit`) but across **different repos** — not duplicates.
-
-If you approve duplicate closes, the following will be commented + closed:
