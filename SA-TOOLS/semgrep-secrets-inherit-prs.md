@@ -59,6 +59,99 @@
 - 6 × `syncdeps.yaml` / `syncdeps.yml` `secrets-inherit`
 - 3 × `ts-grc` `run-functional-tests.yaml` `secrets-inherit`
 
+## CI Status Snapshot (2026-08-11)
+
+Cross-PR CI health check across all 42 PRs. `merge-requirements` (Aviary's approval gate) is excluded from classification since it isn't a CI check.
+
+**Result:** 31 CI-passing · 11 CI-failing
+
+### ✅ CI Passing (31) — ready for review / +10
+
+| # | Repo | PR |
+|---|---|---|
+| 1 | attachment-packager-service | https://github.com/Workiva/attachment-packager-service/pull/3992 |
+| 2 | audit-service | https://github.com/Workiva/audit-service/pull/3788 |
+| 3 | form_config | https://github.com/Workiva/form_config/pull/1081 |
+| 4 | framework_explorer | https://github.com/Workiva/framework_explorer/pull/4597 |
+| 5 | graph-api-bridge | https://github.com/Workiva/graph-api-bridge/pull/1671 |
+| 6 | graph-rpc-api | https://github.com/Workiva/graph-rpc-api/pull/303 |
+| 7 | graph_api | https://github.com/Workiva/graph_api/pull/1176 |
+| 8 | graph_app | https://github.com/Workiva/graph_app/pull/95717 |
+| 9 | graph_printing_orchestrator | https://github.com/Workiva/graph_printing_orchestrator/pull/7133 |
+| 10 | graph_ui | https://github.com/Workiva/graph_ui/pull/10204 |
+| 11 | grc-evergreen | https://github.com/Workiva/grc-evergreen/pull/12926 |
+| 12 | grc-launch-darkly | https://github.com/Workiva/grc-launch-darkly/pull/295 |
+| 13 | grc-logger | https://github.com/Workiva/grc-logger/pull/193 |
+| 14 | grc-rich-text | https://github.com/Workiva/grc-rich-text/pull/591 |
+| 15 | grc_universe_client | https://github.com/Workiva/grc_universe_client/pull/2409 |
+| 16 | markup-service | https://github.com/Workiva/markup-service/pull/3914 |
+| 17 | publish-ui | https://github.com/Workiva/publish-ui/pull/271 |
+| 18 | publishing-service-api-go | https://github.com/Workiva/publishing-service-api-go/pull/347 |
+| 19 | publishing-service-api | https://github.com/Workiva/publishing-service-api/pull/666 |
+| 20 | requests_client | https://github.com/Workiva/requests_client/pull/27809 |
+| 21 | sa-tools-data-modeler | https://github.com/Workiva/sa-tools-data-modeler/pull/3683 |
+| 22 | sa-tools-data-selections | https://github.com/Workiva/sa-tools-data-selections/pull/774 |
+| 23 | sa-tools-graph-structure | https://github.com/Workiva/sa-tools-graph-structure/pull/842 |
+| 24 | sa-tools-parsing-db | https://github.com/Workiva/sa-tools-parsing-db/pull/840 |
+| 25 | sa-tools-toolbox | https://github.com/Workiva/sa-tools-toolbox/pull/6703 |
+| 26 | ts-grc | https://github.com/Workiva/ts-grc/pull/10447 |
+| 27 | w-audit-app | https://github.com/Workiva/w-audit-app/pull/322 |
+| 28 | w_dashboard | https://github.com/Workiva/w_dashboard/pull/684 |
+| 29 | w_dashboard_frugal | https://github.com/Workiva/w_dashboard_frugal/pull/114 |
+| 30 | w_graph_client | https://github.com/Workiva/w_graph_client/pull/1392 |
+| 31 | w_office_online_frame | https://github.com/Workiva/w_office_online_frame/pull/587 |
+
+### ❌ CI Failing (11) — failures are pre-existing, not caused by this diff
+
+The diff is a 3-line YAML edit (`secrets: inherit` → explicit `SLACK_BOT_TOKEN` map). It cannot cause `unit-tests`, `integration-tests`, `verify-build`, etc. to regress. The failures are pre-existing flakes on those branches' `master`, or non-GHA infrastructure (Skynet / Aviary).
+
+| # | Repo | PR | Failing checks |
+|---|---|---|---|
+| 1 | audit-api | https://github.com/Workiva/audit-api/pull/1133 | `generate-frugal`, `GHA Build/PR` |
+| 2 | audit | https://github.com/Workiva/audit/pull/40069 | `test / coverage / test`, `test / unit-tests`, `verify-build`, `Skynet: GHA Build/PR` |
+| 3 | form_service | https://github.com/Workiva/form_service/pull/4047 | `integration-tests / integration-test`, `integration-tests / wuts-test`, `Skynet: GHA Build/PR` |
+| 4 | graph-rpc-service | https://github.com/Workiva/graph-rpc-service/pull/2401 | `Integration Testing / graph_app`, `Skynet: GHA Build/PR` |
+| 5 | grc_testing_client | https://github.com/Workiva/grc_testing_client/pull/722 | `unit-test-release`, `unit-tests-ddc-coverage`, `Skynet: GHA Build/PR` |
+| 6 | request_portal | https://github.com/Workiva/request_portal/pull/13499 | `testing-and-analysis / unit-test-release`, `testing-and-analysis / unit-tests-ddc-coverage`, `Skynet: GHA Build/PR` |
+| 7 | sa-tools-parsing | https://github.com/Workiva/sa-tools-parsing/pull/913 | `🛠️ Service / Build`, `GHA Build/PR` |
+| 8 | sa-tools-persistence | https://github.com/Workiva/sa-tools-persistence/pull/274 | `🛠️ Service / Build`, `GHA Build/PR` |
+| 9 | sa-tools-validation | https://github.com/Workiva/sa-tools-validation/pull/270 | `🛠️ Service / Build`, `GHA Build/PR` |
+| 10 | sa-tools-vc-gen | https://github.com/Workiva/sa-tools-vc-gen/pull/304 | `🛠️ Service / Build`, `GHA Build/PR` |
+| 11 | w_attachments | https://github.com/Workiva/w_attachments/pull/2085 | `test-functional`, `GHA Build/PR`, `Skynet: GHA Build/PR` |
+
+**Failure patterns:**
+- 4 × `sa-tools-*` PRs (`parsing`, `persistence`, `validation`, `vc-gen`) fail with the identical pair `🛠️ Service / Build` + `GHA Build/PR` — shared build issue on those repos' current `master`.
+- 6/11 include `Skynet: GHA Build/PR` — Skynet is notoriously flaky on integration checks.
+- Unit / integration test failures (audit, form_service, graph-rpc-service, grc_testing_client, request_portal, w_attachments) are worth a visual sanity check but the diff can't have caused them.
+
+### Reruns triggered (2026-08-11)
+
+Used `gh run rerun --failed` targeting the latest workflow runs on each failing PR's head SHA (fails-only, so passing jobs are not restarted).
+
+| PR | GHA run rerun |
+|---|---|
+| audit-api#1133 | `CI` (run `31449232154`) — `semver-audit.yaml` refused rerun ("workflow file may be broken"); push an empty commit or rebase onto master to get a fresh run |
+| audit#40069 | `Dart CI` (run `31449340547`) |
+| form_service#4047 | `CI` (run `31449200488`) |
+| graph-rpc-service#2401 | *no failed GHA runs — both failures are Skynet; needs `Rosie, recheck this.`* |
+| grc_testing_client#722 | `CI` (run `31449188711`) |
+| request_portal#13499 | `CI` (run `31449226791`) |
+| sa-tools-parsing#913 | `Build` (run `31449241540`) |
+| sa-tools-persistence#274 | `Build` (run `31449264939`) |
+| sa-tools-validation#270 | `Build` (run `31449295709`) |
+| sa-tools-vc-gen#304 | `Build` (run `31449223372`) |
+| w_attachments#2085 | `Build` (run `31449282334`) |
+
+**Still-red after GHA rerun (need `Rosie, recheck this.` comment for Skynet/Aviary):**
+- audit-api#1133 (`GHA Build/PR` — Aviary)
+- audit#40069 (`verify-build`, `Skynet: GHA Build/PR`)
+- form_service#4047 (`Skynet: GHA Build/PR`)
+- graph-rpc-service#2401 (both failing checks)
+- grc_testing_client#722 (`Skynet: GHA Build/PR`)
+- request_portal#13499 (`Skynet: GHA Build/PR`)
+- sa-tools-parsing#913, sa-tools-persistence#274, sa-tools-validation#270, sa-tools-vc-gen#304 (`GHA Build/PR` — Aviary)
+- w_attachments#2085 (`GHA Build/PR`, `Skynet: GHA Build/PR`)
+
 ## After merge
 
 1. Wait for Semgrep / code scanning to re-run on default branch
