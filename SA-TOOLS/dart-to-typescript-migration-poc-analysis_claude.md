@@ -3,7 +3,7 @@
 > **Date:** 2026-08-19
 > **Author:** SA Tools Engineering (AI-assisted analysis)
 > **Status:** Draft — for review and team discussion
-> **Scope:** grc_universe_client, framework_explorer, assessments_client, form_config, requests_client, request_portal
+> **Scope:** grc_universe_client, framework_explorer, assessments_client, form_config, requests_client, request_portal, graph_admin
 > **Reference:** [SD-16950 — Language Translator Client TypeScript Migration](https://jira.atl.workiva.net/browse/SD-16950)
 > **Org Context:** Accelerating Organization-Wide TypeScript Adoption (Buendia & Pauzé, Oct 2025)
 
@@ -47,12 +47,14 @@ This assessment also incorporates findings from Workiva's organization-wide **"A
 | `requests_client` | `packages/ts-grc-requests-ui` | **Production** — deployed as `phoenix-request-for-task-portal` MFE |
 | `form_config` | N/A (no ts-grc equivalent) | **Dart MFE** — already independently deployed |
 | `request_portal` | N/A (still bundled in wdesk) | **Not yet migrated** |
+| `graph_admin` | N/A (no ts-grc equivalent) | **Dart MFE** — independently deployed, admin-only tool |
 
 This fundamentally changes the migration strategy. Rather than building greenfield TypeScript replacements, the path forward is:
 
 1. **For modules already in ts-grc:** Validate feature parity, route remaining traffic to the TypeScript MFE, and decommission the Dart version.
-2. **For `form_config`:** Already an independently deployed Dart MFE — lowest migration priority since it has deployment independence.
-3. **For `request_portal`:** The best POC candidate — still bundled in wdesk, has a partial ts-grc counterpart (`ts-grc-requests-ui`), and has moderate complexity.
+2. **For `graph_admin`:** Best first POC — smallest module (23 files, 8 components), zero customer risk, tests the Frugal→REST migration path. ~1.5–2 weeks for 1 engineer.
+3. **For `request_portal`:** Best follow-on POC — still bundled in wdesk, has a partial ts-grc counterpart, validates the pattern at customer-facing scale. ~4–6 weeks for 2 engineers.
+4. **For `form_config`:** Already an independently deployed Dart MFE — lowest migration priority since it has deployment independence.
 
 ### Migration Strategy Summary
 
@@ -68,8 +70,9 @@ This fundamentally changes the migration strategy. Rather than building greenfie
 
 | Scenario | Effort | Timeline |
 |---|---|---|
-| POC (request_portal only) | 4–6 weeks (2 engineers) | Q4 2026 |
-| Full migration (all 6 repos) | 16–24 weeks (3–4 engineers) | Q1–Q2 2027 |
+| POC Phase 1 — graph_admin (quick win) | 1.5–2 weeks (1 engineer) | Immediate |
+| POC Phase 2 — request_portal (at scale) | 4–6 weeks (2 engineers) | Q4 2026 |
+| Full migration (all 7 repos) | 18–26 weeks (3–4 engineers) | Q1–Q2 2027 |
 | Feature parity validation (modules already in ts-grc) | 2–4 weeks per module | Ongoing |
 
 ---
@@ -579,7 +582,169 @@ abstract class BaseFrugalService<C extends Disposable> extends Disposable {
 
 **ts-grc Equivalent:** Partial — `ts-grc-requests-ui` covers some request functionality, and `phoenix-request-for-task-portal` handles the task portal integration. The full portal experience may need additional TypeScript work.
 
-**POC Candidacy:** **Best** — See Section 12 for detailed rationale.
+**POC Candidacy:** **Good** — See Section 13 for detailed rationale.
+
+---
+
+### 4.7 graph_admin
+
+**Purpose:** Internal admin panel for the GRC Graph database. Provides support and operations tools for managing graph partitions, account data, cache, membership syncs, link anchoring, and query lookups. Used exclusively by Workiva internal admins and support engineers — not customer-facing.
+
+**Type:** **MFE application** (independently deployed Dart MFE)
+
+**Key Files Inspected:**
+- `pubspec.yaml` — Package `w_graph_admin` v1.592.0, Dart SDK `>=2.19.0 <3.0.0`
+- `web/manifest.yaml` — MFE manifest with `apps: [wdesk]` and ability-gated access
+- `lib/src/graph_admin_extension.dart` — `WdeskExtension` with `DrawerExperienceContributionHost`
+- `lib/src/graph_admin_experience.dart` — `DrawerExperience` factory with `FrugalMessagingProvider`
+- `lib/src/module/graph_admin_module.dart` — `w_module` Module with Flux stores
+- `lib/src/module/clients/base_service_client.dart` — Frugal RPC base (NATS + HTTP transports)
+- `lib/src/module/clients/graph_admin_client.dart` — Admin service Frugal client
+- `lib/src/module/clients/support_service_client.dart` — Support service Frugal client (NATS)
+- `.github/workflows/ci.yaml` — CI pipeline
+
+**Codebase Size:**
+- **23 Dart source files** (excluding generated code)
+- **~2,183 lines of Dart** — one of the smallest GRC modules
+- **8 UI components** — minimal UI surface
+
+**Dependencies (from pubspec.yaml):**
+- **OverReact:** `over_react: ^5.6.1`
+- **State:** `w_flux: ^3.0.3` (Flux pattern — Actions + Stores, NOT Redux)
+- **API:** `frugal: ^3.23.19`, `graph_api: ^16.200.7`, `messaging_sdk: ^3.32.6`
+- **UI:** `unify_ui: ^2.25.11`, `web_skin_dart: ^3.0.31`
+- **Platform:** `wdesk_sdk: ^9.20.10`, `licensing_api: ^4.3.264`, `licensing_frugal: ^5.1216.0`
+- **Extras:** `googleapis: ^10.1.0`, `googleapis_auth: ^1.4.1` (Google Cloud integration for BigData client)
+
+**MFE Architecture:**
+Already an independently deployed MFE using the standard pattern:
+```dart
+// web/graph_admin.mfe.dart (entry point)
+void main() async {
+  writeMfeBuildMetadataToWindow();
+  await createMfe(assetLoader: assetLoader, intlName: 'graph_admin', mfeName: 'graph_admin');
+  GraphAdminExtension(assetLoader);
+}
+```
+
+Manifest registers as a child experience under `workspace_admin_experience`:
+```yaml
+core.drawer_composition:
+  - name: graph_admin_experience_routing
+    details:
+      route_segment: graph_admin
+      parent_experience: admin_client_wdesk_experiences.core.drawer_experiences.workspace_admin_experience
+      location: default@4
+```
+
+**Frugal Integration (3 service clients):**
+
+| Client | Backend Service | Transport | Operations |
+|---|---|---|---|
+| `GraphAdminClient` | `graph-server` `/admin` | **HTTP** | `getHealth`, `getAccounts`, `getGraphPartitionMapping`, `assignAccountPartition`, `revertAccount`, `syncMembers`, `anchorLinks`, `clearCache` |
+| `SupportServiceClient` | `graphServiceSupport16` | **NATS** (subject-based) | `getHealth`, `getQuery`, `getWargQuery` |
+| `BigdataClient` | Google Cloud BigQuery | **googleapis** (REST) | BigQuery query execution |
+
+The `BaseServiceClient` pattern supports both NATS and HTTP Frugal transports:
+```dart
+BaseServiceClient({
+  required FrugalMessagingProvider frugalMessagingProvider,
+  required FrugalClientFactory<T> clientFactory,
+  String? subject,  // → NATS transport
+  String? url,      // → HTTP transport
+})
+```
+
+**NATS Integration:**
+- `SupportServiceClient` uses NATS directly (subject: `graphServiceSupport16`)
+- `GraphAdminClient` uses HTTP transport (URL-based)
+- `FrugalMessagingProvider` obtained from `appContext.frugalMessagingProvider`
+
+**State Management:**
+- **w_flux** (Flux pattern) — NOT Redux
+- `AccountsStore` — manages account list, partition mappings, revert state
+- `SupportStore` — manages query lookup state
+- `AccountsActions` / `SupportActions` — action dispatchers
+- `GraphAdminActions` — composite actions container
+- Simple unidirectional data flow: Action → Store → Component re-render
+
+**OverReact Usage (8 components):**
+- `GraphAdminContent` — root tabbed layout (Accounts / Support)
+- `AccountsComponent` — accounts tab container
+- `AccountsTable` — data table with account list
+- `AccountActionsDropdown` — per-row action menu (revert, sync, anchor, clear cache, partition)
+- `PartitionMappingComponent` — partition assignment UI
+- `RevertComponent` — date picker + revert trigger
+- `RevertModal` — confirmation modal for revert operations
+- `SupportComponent` — query hash lookup UI
+
+**Unify/UI Components:**
+- `unify_ui`: `UnifyThemeProvider`, `Table`, `Button`, `Dialog`, `TextField`, `Typography`, `Stack`, `Alert`
+- `web_skin_dart`: `Modal`, `DropdownButton`, `MenuItem` (legacy — used in action dropdown and revert modal)
+
+**Authentication/Authorization:**
+- Session via `w_session` — standard WDesk session
+- **6 licensing abilities** gate access (from manifest):
+  - `REVERT_GRAPH` (182), `CLEAR_GRAPH_CACHE` (183), `ANCHOR_LINKS` (184)
+  - `SYNC_GRAPH_USERS` (185), `ACCESS_GRAPH_SUPPORT_TOOLS` (186), `SET_GRAPH_PARTITION` (188)
+- Per-operation ability checks via `LicensingApi.canUserV4(abilityId: ...)`
+
+**Feature Flags:** None — no LaunchDarkly usage
+
+**i18n:** Minimal — admin-only tool with hardcoded English strings (no `Intl.message` pattern found)
+
+**Testing:**
+- Unit tests in `test/` using `react_testing_library` + `mocktail`
+- No functional/Puppeteer tests (admin tool — lower test investment)
+
+**ts-grc Equivalent:** None — no existing TypeScript implementation
+
+**POC Candidacy:** **Excellent** — The strongest POC candidate across all repositories:
+
+| Criterion | Score | Rationale |
+|---|---|---|
+| **Small scope** | **Strongest** | 23 files, ~2,183 LOC, 8 components — 10x smaller than request_portal |
+| **Representative patterns** | **Strong** | Exercises Frugal (HTTP + NATS), w_flux, MFE registration, licensing — all patterns needing migration |
+| **Frugal migration test** | **Strongest** | 3 Frugal service clients covering both HTTP and NATS transports — directly tests the org's #1 hard blocker |
+| **Limited coupling** | **Strongest** | Self-contained admin tool with no cross-module dependencies |
+| **Already an MFE** | **Strong** | Already deployed independently — no need to extract from wdesk bundle |
+| **Low-risk deployment** | **Strongest** | Admin-only tool — any issues affect internal staff, not customers |
+| **No i18n needed** | **Strong** | Hardcoded English for internal admin use |
+| **Testability** | **Strong** | Small surface area, easy to verify manually |
+
+### Can Frugal Be Called from TypeScript?
+
+> **Verified finding:** Frugal has **no TypeScript SDK**. The org-wide TypeScript adoption analysis (Oct 2025) confirms: *"Frugal is not supported in TypeScript."* There is no `@workiva/frugal` npm package. ts-grc (70+ packages, production) contains **zero Frugal imports**.
+
+**However, Frugal's HTTP transport IS standard HTTP** — the challenge is the Thrift binary serialization, not the transport. Three migration paths exist:
+
+| Approach | Feasibility | Effort | Recommended? |
+|---|---|---|---|
+| **A. Call REST/GraphQL endpoints instead** | Best — if backend exposes them | Low | **Yes — preferred path (what ts-grc does)** |
+| **B. Ask backend to add REST endpoints** | Good — backend already has the handlers | Low-Medium | **Yes — fallback if REST doesn't exist yet** |
+| **C. Write a TS Thrift serializer** | Possible but fragile | High | **No — fights the org direction** |
+
+For `graph_admin` specifically:
+- `GraphAdminClient` calls `graph-server/admin` over HTTP — check if REST endpoints exist alongside Frugal
+- `SupportServiceClient` uses NATS (subject `graphServiceSupport16`) — needs a REST proxy or the backend team to expose an HTTP endpoint
+- `BigdataClient` already uses REST (Google Cloud APIs) — no change needed
+
+**Recommended migration path for graph_admin:**
+
+```mermaid
+graph LR
+    subgraph "Current (Dart)"
+        DA[Dart Admin UI] -->|Frugal HTTP| GS[graph-server /admin]
+        DA -->|Frugal NATS| SS[Support Service]
+        DA -->|REST| BQ[BigQuery]
+    end
+
+    subgraph "Target (TypeScript)"
+        TA[TS Admin UI] -->|REST/GraphQL| GS2[graph-server /admin]
+        TA -->|REST proxy| SS2[Support Service]
+        TA -->|REST| BQ2[BigQuery]
+    end
+```
 
 ---
 
@@ -600,6 +765,7 @@ graph LR
         RC[requests_client]
         RP[request_portal]
         FC[form_config]
+        GADM[graph_admin]
     end
 
     subgraph "Shared Internal Deps"
@@ -667,6 +833,13 @@ graph LR
     FC --> WEBSKIN
     FC --> UNIFYUI
     FC --> WFLUX
+
+    GADM --> GRAPHAPI
+    GADM --> MSGSDK
+    GADM --> WDESKSDK
+    GADM --> WEBSKIN
+    GADM --> UNIFYUI
+    GADM --> WFLUX
 ```
 
 ### Dependency Classification
@@ -1331,15 +1504,16 @@ All coexist in the same browser session. Each MFE runs in its own JavaScript con
 
 ```mermaid
 graph LR
-    subgraph "Phase 1: Validate Existing"
+    subgraph "Phase 1: Quick Win POC"
+        POC1[Build graph_admin<br/>in ts-grc<br/>1.5-2 weeks]
+    end
+
+    subgraph "Phase 2: Validate Existing + Second POC"
         V1[Verify ts-grc universe<br/>feature parity]
         V2[Verify ts-grc assessments<br/>feature parity]
         V3[Verify ts-grc frameworks<br/>feature parity]
         V4[Verify ts-grc requests<br/>feature parity]
-    end
-
-    subgraph "Phase 2: POC"
-        POC[Build request_portal<br/>in ts-grc]
+        POC2[Build request_portal<br/>in ts-grc<br/>4-6 weeks]
     end
 
     subgraph "Phase 3: Decommission"
@@ -1348,22 +1522,31 @@ graph LR
         D3[Remove w_sox from<br/>wdesk pubspec]
     end
 
+    POC1 --> POC2
     V1 --> D1
     V2 --> D1
     V3 --> D1
     V4 --> D1
-    POC --> D1
+    POC2 --> D1
     D1 --> D2
     D2 --> D3
 ```
 
-**Phase 1: Feature Parity Validation (2–4 weeks per module)**
+**Phase 1: Quick Win — graph_admin POC (1.5–2 weeks)**
+- Build `packages/graph-admin-client` in ts-grc
+- Smallest module (23 files, 8 components) — fast proof of concept
+- Tests the Frugal→REST migration path (org's #1 hard blocker)
+- Admin-only tool — zero customer-facing risk
+- Delivers a deployable result to validate the full pipeline
+
+**Phase 2a: Feature Parity Validation (2–4 weeks per module)**
 - For each module that already has a ts-grc counterpart, systematically compare functionality
 - Create a feature matrix: Dart feature → ts-grc equivalent → status (complete/partial/missing)
 - Fill gaps in ts-grc before routing traffic
 
-**Phase 2: POC — request_portal (4–6 weeks)**
+**Phase 2b: Second POC — request_portal (4–6 weeks)**
 - Build `packages/request-portal-client` in ts-grc
+- Larger, customer-facing module that validates the pattern at scale
 - Register as MFE extension in manifest
 - Deploy behind feature flag
 - Validate in wk-dev, then staging
@@ -1457,9 +1640,147 @@ graph LR
 
 ## 13. POC Recommendation and Implementation Plan
 
-### POC Selection: request_portal
+### POC Selection: Two-Phase Approach — graph_admin first, then request_portal
 
-**Recommended POC:** `request_portal` — Build as `packages/request-portal-client` in the ts-grc monorepo.
+**Recommended Primary POC:** `graph_admin` — Build as `packages/graph-admin-client` in the ts-grc monorepo. This is the fastest path to a deployable TypeScript migration proof point.
+
+**Recommended Follow-on POC:** `request_portal` — Build as `packages/request-portal-client` to validate the pattern at customer-facing scale.
+
+### Why graph_admin First
+
+| Criterion | graph_admin | request_portal |
+|---|---|---|
+| **Codebase size** | 23 files, ~2,183 LOC, 8 components | 115+ files, ~15K+ LOC, 115 components |
+| **Estimated effort** | **1.5–2 weeks** (1 engineer) | 4–6 weeks (2 engineers) |
+| **Frugal migration test** | 3 Frugal clients (HTTP + NATS) — directly validates org's #1 blocker | Frugal via shared `requests_client` services |
+| **Customer risk** | **Zero** — admin-only, internal staff | Customer-facing — request responders |
+| **Dependencies** | Self-contained, no cross-module deps | Depends on `requests_client` shared services |
+| **Already MFE** | Yes — independently deployed | No — still bundled in wdesk |
+| **i18n** | None needed (internal tool) | 421 i18n strings to migrate |
+| **Time to demonstrate value** | **~2 weeks** | ~6 weeks |
+
+graph_admin lets you prove the entire pipeline — Frugal replacement, MFE registration, Unify migration, deployment — in under 2 weeks with zero customer risk.
+
+---
+
+### Phase 1: graph_admin POC (1.5–2 weeks, 1 engineer)
+
+#### Implementation Plan
+
+**Step 1: Verify Backend API Availability (1–2 days)**
+
+graph_admin calls `graph-server/admin` via Frugal HTTP and `graphServiceSupport16` via Frugal NATS. Check which of these have REST/GraphQL equivalents:
+
+| Frugal Operation | Transport | REST/GraphQL Available? | Action if No |
+|---|---|---|---|
+| `getHealth()` | HTTP | Likely (standard health endpoint) | Check graph-server docs |
+| `getAccounts()` | HTTP | **Open question** | Ask graph-server team |
+| `getGraphPartitionMapping(account)` | HTTP | **Open question** | Ask graph-server team |
+| `assignAccountPartition(account, partition)` | HTTP | **Open question** | Ask graph-server team |
+| `revertAccount(accountId, revertDate)` | HTTP | **Open question** | Ask graph-server team |
+| `syncMembers(accountId)` | HTTP | **Open question** | Ask graph-server team |
+| `anchorLinks(accountId)` | HTTP | **Open question** | Ask graph-server team |
+| `clearCache(accountId)` | HTTP | **Open question** | Ask graph-server team |
+| `getQuery(hash)` | NATS | **Open question** | Ask graph-server team to add REST endpoint |
+| `getWargQuery(hash)` | NATS | **Open question** | Ask graph-server team to add REST endpoint |
+
+**Step 2: Package Scaffolding (0.5 days)**
+
+```bash
+cd /path/to/ts-grc
+pnpm create:experience
+# Name: graph-admin-client
+```
+
+**Step 3: API Layer (2–3 days)**
+
+```typescript
+// packages/graph-admin-client/src/api/graphAdminApi.ts
+import { getSession } from '@workiva/session_mfe_service';
+import { Environment } from '@workiva/wdesk_browser_environment';
+
+const getBaseUrl = () => {
+  const serviceUri = Environment.getServiceUri('graph-server');
+  return `${serviceUri}/admin`;
+};
+
+const authHeaders = async (): Promise<HeadersInit> => {
+  const session = await getSession();
+  const [accessToken, workspaceId, orgId, userId] = await Promise.all([
+    session.getAccessToken(),
+    session.getAccountResourceId(),
+    session.getOrganizationId(),
+    session.getUserResourceId(),
+  ]);
+  return {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'x-workiva-organization': orgId,
+    'x-workiva-userrid': userId,
+    'x-workiva-workspace': workspaceId,
+  };
+};
+
+export async function getAccounts(): Promise<Account[]> {
+  const res = await fetch(`${getBaseUrl()}/accounts`, { headers: await authHeaders() });
+  if (!res.ok) throw new Error(`getAccounts failed: ${res.status}`);
+  return res.json();
+}
+
+export async function revertAccount(accountId: string, revertDate: number): Promise<void> {
+  const res = await fetch(`${getBaseUrl()}/accounts/${accountId}/revert`, {
+    method: 'POST',
+    headers: await authHeaders(),
+    body: JSON.stringify({ revertDate }),
+  });
+  if (!res.ok) throw new Error(`revertAccount failed: ${res.status}`);
+}
+```
+
+**Step 4: UI Components — 8 total (3–4 days)**
+
+| Dart Component | TypeScript Equivalent | Complexity |
+|---|---|---|
+| `GraphAdminContent` | Tabbed layout with `@workiva/unify` Tabs | Low |
+| `AccountsComponent` | Accounts tab container | Low |
+| `AccountsTable` | Table with `@workiva/unify` DataGrid or Table | Medium |
+| `AccountActionsDropdown` | MUI Menu + MenuItem per row | Low |
+| `PartitionMappingComponent` | Partition display/assign UI | Low |
+| `RevertComponent` | Date picker + button | Low |
+| `RevertModal` | Confirmation Dialog | Low |
+| `SupportComponent` | Hash input + query display | Low |
+
+State: Replace w_flux stores with React `useState`/`useReducer` or a small Redux Toolkit slice.
+
+**Step 5: MFE Registration + Testing (1–2 days)**
+
+Add to `apps/ts-grc/manifest.yaml` and create `apps/ts-grc/src/graph_admin.ts` entry point.
+
+#### graph_admin Deliverables
+
+- `packages/graph-admin-client/` — New ts-grc package
+- `apps/ts-grc/src/graph_admin.ts` — MFE entry point
+- Updated `apps/ts-grc/manifest.yaml` with `phoenix-graph-admin` extension
+- REST API layer for graph-server admin operations
+- Unit tests for API + components
+- Deployed to wk-dev behind ability gate
+
+#### graph_admin Definition of Done
+
+- [ ] All 8 admin operations callable from TypeScript (REST or GraphQL)
+- [ ] All 8 UI components render correctly in wk-dev
+- [ ] Admin experience appears under Workspace Admin → Graph Admin
+- [ ] Ability gating works (only users with abilities 182–188 see it)
+- [ ] Dart graph_admin continues to work unchanged (no regression)
+- [ ] Tests pass
+
+---
+
+### Phase 2: request_portal POC (4–6 weeks, 2 engineers)
+
+Proceeds after graph_admin validates the pipeline. The original request_portal plan follows.
+
+#### POC Selection Rationale: request_portal
 
 ### Selection Rationale
 
@@ -1821,6 +2142,7 @@ This GRC migration is fully aligned with the five strategic recommendations from
 | **form_config** | `form_config/pubspec.yaml`, `form_config/web/form_config_example.mfe.dart`, `form_config/web/extensions/form_config_example/extension.dart`, `form_config/web/manifest.yaml`, `form_config/build.yaml`, `pipeline_template.yaml`, `.github/workflows/ci.yaml` |
 | **requests_client** | `pubspec.yaml`, `lib/src/shared/services/base_frugal_service.dart`, `lib/src/shared/services/audit_request_services.dart`, `lib/src/shared/models/`, `lib/src/experiences/`, `lib/src/task_portal/`, `lib/src/environment.dart`, `.github/workflows/ci.yml` |
 | **request_portal** | `pubspec.yaml`, `web/main.dart`, `lib/src/components/`, `lib/src/services/`, `lib/src/stores/`, `lib/src/models/`, `build.yaml`, `.github/workflows/ci.yml` |
+| **graph_admin** | `pubspec.yaml`, `web/manifest.yaml`, `lib/src/graph_admin_extension.dart`, `lib/src/graph_admin_experience.dart`, `lib/src/module/graph_admin_module.dart`, `lib/src/module/clients/base_service_client.dart`, `lib/src/module/clients/graph_admin_client.dart`, `lib/src/module/clients/support_service_client.dart`, `.github/workflows/ci.yaml` |
 
 ### Reference Repositories
 
@@ -1837,7 +2159,8 @@ This GRC migration is fully aligned with the five strategic recommendations from
 | Use ts-grc monorepo as target | 70+ packages already exist; production MFEs deployed; comprehensive CLAUDE.md |
 | Apollo Client replaces Frugal | ts-grc `packages/graphql/src/client.ts` uses Apollo; 48K-line GraphQL schema |
 | Unify replaces web_skin_dart | `@workiva/unify: ^2.32.1` in all ts-grc packages; native React components |
-| request_portal as POC | Only non-MFE Dart app without full ts-grc equivalent; ~15–20 components; bounded scope |
+| graph_admin as first POC | Smallest module (23 files, 8 components, ~2,183 LOC); zero customer risk; tests Frugal→REST migration; already MFE |
+| request_portal as follow-on POC | Validates pattern at customer-facing scale; still bundled in wdesk; partial ts-grc counterpart |
 | No direct NATS in TypeScript | ts-grc has zero `messaging_sdk` or NATS imports; uses polling/HTTP |
 | MFE mono-bundle pattern | `apps/ts-grc/manifest.yaml` registers 20+ extensions from single build |
 | Feature flag gating for rollout | Manifest `can_user_access: "feature_flag.*"` proven in ts-grc |
