@@ -643,7 +643,10 @@ core.drawer_composition:
 |---|---|---|---|
 | `GraphAdminClient` | `graph-server` `/admin` | **HTTP** | `getHealth`, `getAccounts`, `getGraphPartitionMapping`, `assignAccountPartition`, `revertAccount`, `syncMembers`, `anchorLinks`, `clearCache` |
 | `SupportServiceClient` | `graphServiceSupport16` | **NATS** (subject-based) | `getHealth`, `getQuery`, `getWargQuery` |
-| `BigdataClient` | Google Cloud BigQuery | **googleapis** (REST) | BigQuery query execution |
+| `BigdataClient` | Google Cloud BigQuery | **googleapis** (REST) | BigQuery query execution (graph operation trace lookup) |
+| `WorkspacesService` | identity/workspaces | **Frugal HTTP** | `getWorkspace`, `getWorkspacesInOrganization` (account search) |
+
+**BigQuery dependency (unique risk):** The support tools tab uses `googleapis` + `googleapis_auth` for browser-side OAuth2 implicit flow to Google BigQuery. This is a separate auth flow from WDesk SSO — the user authorizes with Google directly. TypeScript equivalent: use the `googleapis` npm package or a backend proxy. This can be **excluded from the initial POC scope** and added as a follow-on since it only affects the support query lookup tab.
 
 The `BaseServiceClient` pattern supports both NATS and HTTP Frugal transports:
 ```dart
@@ -1683,6 +1686,9 @@ graph_admin calls `graph-server/admin` via Frugal HTTP and `graphServiceSupport1
 | `clearCache(accountId)` | HTTP | **Open question** | Ask graph-server team |
 | `getQuery(hash)` | NATS | **Open question** | Ask graph-server team to add REST endpoint |
 | `getWargQuery(hash)` | NATS | **Open question** | Ask graph-server team to add REST endpoint |
+| `getWorkspace(id)` | Frugal HTTP | Likely (identity REST API) | Use `Environment.getServiceUri('identity')` directly |
+| `getWorkspacesInOrganization(orgId)` | Frugal HTTP | Likely (identity REST API) | Use identity REST API |
+| BigQuery trace queries | Google REST | **Yes** (googleapis npm) | Use `googleapis` npm package or backend proxy; **defer to Phase 2** |
 
 **Step 2: Package Scaffolding (0.5 days)**
 
