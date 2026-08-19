@@ -5,31 +5,35 @@
 > **Status:** Draft — for review and team discussion
 > **Scope:** grc_universe_client, framework_explorer, assessments_client, form_config, requests_client, request_portal
 > **Reference:** [SD-16950 — Language Translator Client TypeScript Migration](https://jira.atl.workiva.net/browse/SD-16950)
+> **Org Context:** Accelerating Organization-Wide TypeScript Adoption (Buendia & Pauzé, Oct 2025)
 
 ---
 
 ## Table of Contents
 
 1. [Executive Summary](#1-executive-summary)
-2. [Current-State Architecture](#2-current-state-architecture)
-3. [Repository-by-Repository Assessment](#3-repository-by-repository-assessment)
-4. [Dependency and Integration Map](#4-dependency-and-integration-map)
-5. [Proposed TypeScript Architecture](#5-proposed-typescript-architecture)
-6. [UI and Unify Migration Strategy](#6-ui-and-unify-migration-strategy)
-7. [Frugal Integration Strategy](#7-frugal-integration-strategy)
-8. [NATS Integration Strategy](#8-nats-integration-strategy)
-9. [Utilities and Dependency Migration](#9-utilities-and-dependency-migration)
-10. [Interoperability and Incremental Migration](#10-interoperability-and-incremental-migration)
-11. [Testing, CI/CD, Rollout, and Rollback](#11-testing-cicd-rollout-and-rollback)
-12. [POC Recommendation and Implementation Plan](#12-poc-recommendation-and-implementation-plan)
-13. [Risks, Assumptions, and Open Questions](#13-risks-assumptions-and-open-questions)
-14. [Final Recommendation](#14-final-recommendation)
+2. [Organizational Context — Workiva-Wide TypeScript Adoption](#2-organizational-context--workiva-wide-typescript-adoption)
+3. [Current-State Architecture](#3-current-state-architecture)
+4. [Repository-by-Repository Assessment](#4-repository-by-repository-assessment)
+5. [Dependency and Integration Map](#5-dependency-and-integration-map)
+6. [Proposed TypeScript Architecture](#6-proposed-typescript-architecture)
+7. [UI and Unify Migration Strategy](#7-ui-and-unify-migration-strategy)
+8. [Frugal Integration Strategy](#8-frugal-integration-strategy)
+9. [NATS Integration Strategy](#9-nats-integration-strategy)
+10. [Utilities and Dependency Migration](#10-utilities-and-dependency-migration)
+11. [Interoperability and Incremental Migration](#11-interoperability-and-incremental-migration)
+12. [Testing, CI/CD, Rollout, and Rollback](#12-testing-cicd-rollout-and-rollback)
+13. [POC Recommendation and Implementation Plan](#13-poc-recommendation-and-implementation-plan)
+14. [Risks, Assumptions, and Open Questions](#14-risks-assumptions-and-open-questions)
+15. [Final Recommendation](#15-final-recommendation)
 
 ---
 
 ## 1. Executive Summary
 
 This document provides a code-level technical assessment of migrating six Dart/OverReact frontend repositories to TypeScript/React. The analysis is based on direct inspection of source code, dependency manifests, build configurations, and deployment pipelines across all six target repositories, plus three reference implementations.
+
+This assessment also incorporates findings from Workiva's organization-wide **"Accelerating Organization-Wide TypeScript Adoption"** discovery (Buendia & Pauzé, Oct 2025), which identified critical platform blockers, the "Golden Path" incremental MFE strategy, and cross-team adoption timelines that directly impact this GRC migration effort.
 
 ### Key Finding
 
@@ -70,7 +74,69 @@ This fundamentally changes the migration strategy. Rather than building greenfie
 
 ---
 
-## 2. Current-State Architecture
+## 2. Organizational Context — Workiva-Wide TypeScript Adoption
+
+> **Source:** "Accelerating Organization-Wide TypeScript Adoption" — Discovery findings from Briana Buendia & Dustin Pauzé (Oct 27, 2025), covering DPC, RRPL, Wdata, ESG, SCM, ANC, AI Squad.
+
+### The Strategic Imperative
+
+The organization-wide TypeScript initiative has established that **incremental MFE replacement is the "Golden Path"** for migrating off Dart/WebSkinDart. A complete "rip and replace" rewrite of large Dart monoliths is deemed **unfeasible**. The primary objective is to **stop adding technical debt** by mandating all greenfield development be in TypeScript.
+
+GRC's `ts-grc` monorepo is well ahead of this curve — it is already a production TypeScript MFE with 20+ experiences deployed. This positions GRC as a **model for the organization**, not a laggard.
+
+### Critical Platform Blockers Affecting This Migration
+
+The org-wide discovery identified five hard blockers that the GRC team must account for:
+
+| # | Blocker | Org Status (H1 2026 target) | Impact on GRC Migration |
+|---|---|---|---|
+| **1** | **Frugal Replacement (RPC/PubSub)** | **Hard Blocker** — Frugal is not supported in TypeScript. A viable non-Frugal replacement for RPC and a Pub-sub solution (e.g., straight NATS) is a mandatory prerequisite. | **Mitigated for GRC:** ts-grc already uses GraphQL + REST instead of Frugal. The backend (`grc-evergreen`) serves both Frugal (legacy Dart) and GraphQL (ts-grc). However, modules still on Dart Frugal (requests_client, request_portal) need backend GraphQL coverage verified. |
+| **2** | **w_outline Replacement** | **Critical** — `w_outline` renders large virtualized data structures (tens of thousands of nodes). Required for Taxonomy Analyzer, ESG Explorer, etc. | **Impacts `framework_explorer`:** The Dart version uses `w_outline` for the left-panel framework hierarchy tree. The ts-grc `framework-reference-client` appears to have solved this independently, but the ESG team's outline work should be tracked as a shared dependency. |
+| **3** | **Dynamic Shell/UI APIs** | **Critical** — TS mechanism needed for dynamically adding/removing UI panels in experiences (RichExperience/DrawerExperience). | **Mitigated for GRC:** ts-grc already uses `@workiva/drawer_experience_contribution` + `@workiva/microfrontend` for this. The `TsGrcDrawerExperience` class handles mount/unmount lifecycle. However, `request_portal`'s `RichExperience` patterns (DataPanel, HistoryPanel, CommentsPanel as child modules) may need the TS shell API for panel contribution. |
+| **4** | **DPC MF API / Proxies** | **In progress** — Infrastructure for TS panels to communicate with DPC state, Frugal, and Skaar. | **Low impact for GRC:** GRC modules are self-contained and don't depend on DPC state. However, document-embedding experiences (e.g., graph_markup_viewer) may need DPC proxies. |
+| **5** | **Standardized CI/Monorepo Tooling** | **Needed** — Guidelines for Dart/TS interop in same repo, pnpm management, CI/CD retrofitting. | **Mitigated for GRC:** ts-grc already has a mature pnpm monorepo with CI (GitHub Actions), Vite build, ESLint, Prettier, and comprehensive CLAUDE.md conventions. New packages follow established patterns. |
+
+### How GRC Aligns with the Organizational Strategy
+
+| Org Recommendation | GRC Status | Action Needed |
+|---|---|---|
+| **Action 1: Eliminate Hard Blockers** (Frugal, w_outline, Shell APIs) | GraphQL replaces Frugal in ts-grc; MFE SDK replaces shell APIs | Verify GraphQL coverage for request_portal operations; track w_outline TS work for framework_explorer |
+| **Action 2: Define the Golden Path** (templates, Dart/TS coexistence, testing) | ts-grc is a living reference implementation with documented conventions | Share ts-grc patterns as organizational template; document Dart↔TS coexistence for graph_app |
+| **Action 3: AI as Lever** (TS prerequisite for AI-first development) | ts-grc already integrates AI (`@workiva/ts-grc-agent-service`, `gen_ai_mfe_service`) | Frame request_portal POC as enabling AI-augmented request workflows |
+| **Action 4: Workback Plan** (Dart 3 containment) | Most Dart repos are on Dart 2.x with `sound_null_safety: false` | Dart 3 migration is unnecessary if TS migration is the target; avoid investing in Dart 3 for repos being migrated |
+| **Action 5: SteerCo & Governance** | No formal SteerCo participation identified | Engage with TS SteerCo to align GRC migration timeline with org priorities |
+
+### GRC's Position in the Org-Wide Adoption Landscape
+
+The discovery identified tractable 2026 opportunities across product teams. GRC is notably **ahead of most teams**:
+
+| Team | 2026 Opportunity | Status |
+|---|---|---|
+| **GRC (this assessment)** | Already has production TS MFE with 20+ experiences; POC for remaining modules | **Leading adopter** — can share patterns with other teams |
+| RRPL | Agentic 10-K, Disclosure Benchmarking, Taxonomy Analyzer 2 | Planning TS adoption for H1 2026; **blocked on w_outline** |
+| AI Squad | Custom Intelligence knowledge base (greenfield TS) | Building from scratch in TS |
+| ESG | Report Generator, ESG Explorer outline rework | Reworking outline in TS; **beach head project active** |
+| SCM | Entity 360 drawer experience MFE | Active TS projects; EAP offering |
+| DPC | Small library/package migration; ruler bar conversion | Rarely greenfield; incremental conversion |
+| Wdata | BI tool integration via MFE | Planning TS/MFE for data products |
+| ANC / Processes | Entity Oversight (large new feature) | Intends to discuss TS for new features |
+| ANC / Scripting | Convert scripting app to TS before GA | Side panel as starting point |
+
+### Implications for This POC
+
+1. **Frugal is NOT a blocker for GRC** — unlike most teams, ts-grc has already solved the Frugal replacement by using GraphQL. The request_portal POC can proceed without waiting for the org-wide Frugal replacement.
+
+2. **The POC validates the Golden Path** — A successful request_portal migration demonstrates the incremental MFE replacement strategy that the org has endorsed as the standard approach.
+
+3. **Dart 3 containment is moot** — Rather than investing in Dart 3 null-safety migration for these repos, the GRC team should redirect that effort toward completing the TypeScript migration.
+
+4. **Testing strategy needs definition** — The org-wide analysis highlights functional testing as an unresolved question. The POC should establish the Playwright-based functional testing approach that can serve as a template for other teams.
+
+5. **AI opportunity** — Framing the migration as enabling AI-first development (the org's strongest adoption lever) will help secure executive support and resource allocation through the SteerCo.
+
+---
+
+## 3. Current-State Architecture
 
 ### System Overview
 
@@ -160,9 +226,9 @@ graph TB
 
 ---
 
-## 3. Repository-by-Repository Assessment
+## 4. Repository-by-Repository Assessment
 
-### 3.1 grc_universe_client
+### 4.1 grc_universe_client
 
 **Purpose:** The GRC Universe module — provides the main controls and risks management interface including list views, detail panels, charts, bulk operations, and data import/export.
 
@@ -220,7 +286,7 @@ graph TB
 
 ---
 
-### 3.2 framework_explorer
+### 4.2 framework_explorer
 
 **Purpose:** Framework reference catalog and administration — allows users to browse, search, and manage compliance framework references (e.g., SOX, COSO, ISO 27001).
 
@@ -263,11 +329,13 @@ graph TB
 - Uses Apollo Client (GraphQL) + Unify + react-hook-form
 - Clean, smaller package with focused dependencies
 
+**w_outline Dependency (Org Blocker #2):** The Dart version uses `w_outline` for the left-panel framework hierarchy tree (rendering large virtualized structures with tens of thousands of nodes). The org-wide TypeScript discovery identifies `w_outline` replacement as a **critical platform dependency** also blocking RRPL's Taxonomy Analyzer 2 and ESG's Explorer rework. The ts-grc `framework-reference-client` appears to have solved this independently. **Action:** Verify whether ts-grc's tree implementation can serve as a reusable pattern for other teams, and track the ESG team's outline rework as a potential shared component.
+
 **POC Candidacy:** **Poor** — Already has a production TypeScript equivalent. Focus should be on feature parity validation.
 
 ---
 
-### 3.3 assessments_client
+### 4.3 assessments_client
 
 **Purpose:** Assessment campaigns management — supports creating, distributing, responding to, and reviewing assessments (questionnaires) for GRC compliance workflows.
 
@@ -315,7 +383,7 @@ graph TB
 
 ---
 
-### 3.4 form_config
+### 4.4 form_config
 
 **Purpose:** Form configuration and customization — allows administrators to configure custom form fields, layouts, and validation rules for GRC data entry forms.
 
@@ -378,7 +446,7 @@ void main() async {
 
 ---
 
-### 3.5 requests_client
+### 4.5 requests_client
 
 **Purpose:** Request management — handles the lifecycle of GRC requests including creation, assignment, response, review, return, and approval. Requests are a core workflow primitive in the GRC platform.
 
@@ -461,7 +529,7 @@ abstract class BaseFrugalService<C extends Disposable> extends Disposable {
 
 ---
 
-### 3.6 request_portal
+### 4.6 request_portal
 
 **Purpose:** External request portal — a simplified interface for external users (non-GRC admins) to view and respond to assigned requests. Provides a focused, task-oriented view of request activities.
 
@@ -515,7 +583,7 @@ abstract class BaseFrugalService<C extends Disposable> extends Disposable {
 
 ---
 
-## 4. Dependency and Integration Map
+## 5. Dependency and Integration Map
 
 ### Cross-Repository Dependency Graph
 
@@ -656,7 +724,7 @@ graph LR
 
 ---
 
-## 5. Proposed TypeScript Architecture
+## 6. Proposed TypeScript Architecture
 
 ### Target Architecture
 
@@ -801,7 +869,7 @@ The `apps/ts-grc/` application bundles all feature packages into a single deploy
 
 ---
 
-## 6. UI and Unify Migration Strategy
+## 7. UI and Unify Migration Strategy
 
 ### OverReact to React Pattern Mapping
 
@@ -883,7 +951,9 @@ Unify (`@workiva/unify`) provides **native TypeScript/React components**. It is 
 
 ---
 
-## 7. Frugal Integration Strategy
+## 8. Frugal Integration Strategy
+
+> **Org-wide context:** The TypeScript Adoption discovery (Oct 2025) identifies Frugal replacement as the **#1 hard blocker** across the organization: *"Frugal is not supported in TypeScript. A viable non-Frugal replacement for RPC and a Pub-sub solution (e.g., Straight NATS) is a mandatory prerequisite for migration."* However, **GRC has already solved this** — ts-grc uses GraphQL + REST instead of Frugal, with `grc-evergreen` serving both protocols to support the transition. This positions GRC ahead of RRPL, DPC, Wdata, and other teams still blocked on Frugal.
 
 ### Current Frugal Architecture
 
@@ -1031,7 +1101,9 @@ export function useRequests(workspaceId: string) {
 
 ---
 
-## 8. NATS Integration Strategy
+## 9. NATS Integration Strategy
+
+> **Org-wide context:** The TypeScript Adoption discovery identifies Pub-sub replacement (e.g., "Straight NATS") as part of the Frugal hard blocker. The platform team (FEF) is expected to deliver a replacement by H1 2026. For GRC, ts-grc has already eliminated direct browser NATS usage — all data access goes through GraphQL/REST over standard HTTPS.
 
 ### Current NATS Architecture
 
@@ -1141,7 +1213,7 @@ Based on evidence from ts-grc (which is already in production without direct NAT
 
 ---
 
-## 9. Utilities and Dependency Migration
+## 10. Utilities and Dependency Migration
 
 ### Dart Utility Inventory and Migration Strategy
 
@@ -1224,7 +1296,9 @@ await navigator.goto('phoenix-request-portal', { resourceId: requestId });
 
 ---
 
-## 10. Interoperability and Incremental Migration
+## 11. Interoperability and Incremental Migration
+
+> **Org-wide context:** The TypeScript Adoption discovery calls for *"templates and guidance for handling Dart/TS coexistence in the same repository"* and *"standardizing monorepo management (PNPM, build tools), and CI/CD retrofitting."* GRC's established ts-grc monorepo already demonstrates these patterns. The coexistence model documented below — where Dart MFEs and TS MFEs run simultaneously in the wdesk shell — is the organizational "Golden Path" that other teams are trying to achieve.
 
 ### Can Dart/OverReact and TypeScript/React Coexist?
 
@@ -1320,7 +1394,9 @@ graph LR
 
 ---
 
-## 11. Testing, CI/CD, Rollout, and Rollback
+## 12. Testing, CI/CD, Rollout, and Rollback
+
+> **Org-wide context:** The TypeScript Adoption discovery highlights functional testing strategy as an **unresolved organizational question**: *"Definitive guidance on the functional testing approach, including the role of Playwright for components and the migration path for the complex existing Dart functional test framework"* is listed as a critical missing piece. The GRC team's approach with Playwright (already in use in ts-grc) can serve as a template for other teams.
 
 ### Testing Strategy
 
@@ -1379,7 +1455,7 @@ graph LR
 
 ---
 
-## 12. POC Recommendation and Implementation Plan
+## 13. POC Recommendation and Implementation Plan
 
 ### POC Selection: request_portal
 
@@ -1605,7 +1681,17 @@ export const requestPortalRouterSettings: RouterSettings = {
 
 ---
 
-## 13. Risks, Assumptions, and Open Questions
+## 14. Risks, Assumptions, and Open Questions
+
+### Organizational Risks (from TypeScript Adoption Discovery)
+
+The org-wide discovery identified three systemic risks that apply to this migration:
+
+| Risk | Impact on GRC | Mitigation |
+|---|---|---|
+| **Organizational misalignment on priorities** — Product and engineering have different priorities | GRC migration may compete with feature development for engineer time | Frame POC as enabling AI capability and independent deployment (product value), not just tech debt cleanup |
+| **Capacity constraints** — FTE alignment across migration + feature work | 2 engineers for 4–6 weeks is a significant commitment | Consider hybrid approach: FTEs for architecture/integration, contractors for component porting |
+| **Stacked technical debt and incomplete migrations** — Partial migrations compound complexity | Risk of maintaining both Dart and TS versions during transition | Minimize dual-running window; use feature flags for clean cutover; freeze Dart feature development for migrating modules |
 
 ### High-Risk Items
 
@@ -1653,11 +1739,23 @@ export const requestPortalRouterSettings: RouterSettings = {
 
 ---
 
-## 14. Final Recommendation
+## 15. Final Recommendation
 
 ### Summary
 
 The migration from Dart/OverReact to TypeScript/React is not a greenfield effort — it is largely a **feature parity validation and gap-filling exercise** on top of the existing `ts-grc` monorepo. Four of the six target repositories already have production TypeScript equivalents.
+
+### Alignment with Organizational TypeScript Strategy
+
+This GRC migration is fully aligned with the five strategic recommendations from the org-wide TypeScript adoption initiative:
+
+| Org Action | GRC Alignment |
+|---|---|
+| **Action 1: Eliminate Hard Blockers** | GRC has already eliminated the Frugal hard blocker via GraphQL. This POC demonstrates the path for other teams. |
+| **Action 2: Define the Golden Path** | The request_portal POC follows the exact "incremental MFE replacement" strategy endorsed by the organization. ts-grc's conventions (CLAUDE.md, CONVENTIONS.md) serve as the Golden Path template. |
+| **Action 3: AI as Lever** | ts-grc already integrates AI services (`@workiva/ts-grc-agent-service`). The POC enables AI-augmented request workflows — framing TypeScript as a prerequisite for AI-first development. |
+| **Action 4: Workback Plan** | This document IS the workback plan for the GRC module migration, with phased timelines, effort estimates, and dependency mapping. Dart 3 containment is moot — these modules migrate to TS, not Dart 3. |
+| **Action 5: SteerCo & Governance** | Recommend presenting this POC plan to the TS SteerCo as a reference case for other product teams. GRC's advanced adoption status positions it as a model, not a follower. |
 
 ### Recommended Next Steps
 
