@@ -898,6 +898,140 @@ graph LR
 | `test` / `dart_test` | All 6 repos | Vitest | Replace |
 | `mockito` | Some repos | Vitest mocks (`vi.mock`, `vi.fn`) | Replace |
 
+### Deep Dive: web_skin_dart (Legacy Component Library)
+
+`web_skin_dart` is Workiva's **legacy** Dart component library (pre-Unify). It is being replaced by `unify_ui` (Dart) and `@workiva/unify` (TypeScript). However, it remains actively used across all 7 target repos.
+
+**web_skin_dart component usage by repository:**
+
+| Component Category | Components | graph_admin | grc_universe_client | framework_explorer | assessments_client | form_config | requests_client | request_portal | TS Equivalent |
+|---|---|---|---|---|---|---|---|---|---|
+| **Buttons** | `Button`, `DropdownButton`, `VerticalToolbarButton` | - | - | - | - | `Button` | `Button`, `DropdownButton` | `DropdownButton`, `VerticalToolbarButton` | `@workiva/unify` `Button`, MUI `Menu` |
+| **Modals** | `Modal`, `ModalTrigger`, `DialogBody`, `DialogFooter`, `DialogTrigger` | `Modal`, `ModalTrigger`, `DialogTrigger`, `DialogBody`, `DialogFooter` | - | - | - | - | `Modal` | `Modal` | MUI `Dialog`, `DialogContent`, `DialogActions` |
+| **Forms** | `TextInput`, `DatepickerInput`, `DropdownSelect`, `Form`, `FormGroup`, `SelectOption`, `AutosizeTextarea`, `ComboBox` | `TextInput`, `DatepickerInput`, `DropdownSelect`, `Form`, `FormGroup`, `SelectOption`, `AutosizeTextarea`, `ComboBox` + 20 more | - | - | - | - | - | `AutosizeTextarea` | MUI `TextField`, `Select`, `Autocomplete`, `DatePicker` |
+| **Icons** | `Icon`, `IconGlyph` | `Icon`, `IconGlyph` | - | `Icon` | `Icon` | `Icon` | `Icon` | `Icon` | `@workiva/unify` `UnifyIcons` |
+| **Layout** | `Block`, `BlockContent`, `Layout`, `ActionGroup` | `Block`, `Label` | - | - | - | - | `Block`, `BlockContent`, `ActionGroup` | `Block`, `BlockContent`, `Layout`, `ActionGroup` | MUI `Box`, `Stack`, `Paper` |
+| **Menus** | `DropdownMenu`, `MenuItem`, `Submenu`, `SelectOption` | `DropdownMenu`, `SelectOption` | - | - | `DropdownMenu`, `MenuItem` | `DropdownMenu`, `MenuItem`, `Submenu` | `DropdownMenu`, `MenuItem`, `SelectOption` | `DropdownMenu`, `MenuItem` | MUI `Menu`, `MenuItem` |
+| **Overlays** | `OverlayTrigger`, `Tooltip`, `Popover` | - | - | `Tooltip` | `OverlayTrigger` | - | `OverlayTrigger`, `Tooltip` | `OverlayTrigger`, `Tooltip`, `Popover` | MUI `Tooltip`, `Popover` |
+| **Toolbars** | `toolbars.VerticalButton`, `ToggleInputGroup`, `CheckboxInput` | `CheckboxInput`, `ToggleInputGroup`, `CheckboxButton`, `RadioInput`, etc. | - | - | `toolbars.VerticalButton` | `toolbars.VerticalButton` | `toolbars.VerticalButton`, `ToggleInputGroup`, `CheckboxInput` | `toolbar.VerticalButton` | MUI `ToggleButtonGroup`, `Checkbox` |
+| **Alerts** | `Alert`, `AlertSkin` | `Alert`, `AlertSkin` | - | - | - | - | - | - | MUI `Alert` |
+| **File Input** | `DropTargetFileInput`, `FileInput` | `DropTargetFileInput`, `FileInput` | - | - | - | - | - | `DropTargetFileInput` | HTML `<input type="file">` + custom drop zone |
+
+**Key findings:**
+- **graph_admin** has the heaviest `web_skin_dart` usage — `support_component.dart` imports 50+ WSD components (many appear to be unused/dead imports from a "kitchen sink" file)
+- **grc_universe_client** has **zero** `web_skin_dart` imports — fully migrated to `unify_ui`
+- **framework_explorer** uses only `Icon` and `Tooltip` from WSD
+- **form_config** uses WSD only in toolbar components (`Button`, `DropdownMenu`, `MenuItem`, `Submenu`, `Icon`, `toolbars`)
+- **requests_client** and **request_portal** still use WSD moderately for modals, toolbars, and layout
+
+**Migration impact:** All `web_skin_dart` components have direct equivalents in `@workiva/unify` (MUI-based). The migration is component-by-component — no architectural changes needed.
+
+### Deep Dive: graph_ui (Shared GRC UI Library)
+
+`graph_ui` (v36.18.3) is the **largest shared dependency** — a monolithic Dart package providing UI components, service clients, data models, and utilities used by all GRC modules.
+
+**graph_ui subsystem → ts-grc equivalent mapping:**
+
+| graph_ui Subsystem | Purpose | Used By | ts-grc Equivalent | Status |
+|---|---|---|---|---|
+| `folder_list/` | Virtualized table framework (columns, filters, sort, selection, folder model) | requests_client (FolderListExperience) | `@workiva/ts-grc-data-grid-next` (MUI DataGridPro) | **Replaced** — different component, same functionality |
+| `panels/` | DataPanel, HistoryPanel side panels | request_portal, framework_explorer | `@workiva/ts-grc-history-panel-ui` | **Partial** — history panel exists; data panel may need work |
+| `permissions/` | `VertexRulePermissionsDialogTrigger`, `PermissionsServiceClient` | grc_universe_client, assessments_client, request_portal | Built into `@workiva/grc-core` permission hooks | **Replaced** — permission checks via GraphQL |
+| `graph_form/` | Form definition rendering, field types | form_config | `@workiva/ts-grc-forms` | **Replaced** |
+| `graph_form_module/` | Form module lifecycle | form_config, request_portal | `@workiva/ts-grc-forms` | **Replaced** |
+| `components/` | Shared UI components (breadcrumbs, spinners, etc.) | All repos | `@workiva/ts-grc-component-library` | **Replaced** |
+| `services/` | `FormServiceClientV2`, `BaseServiceClientV2`, `GrpcStatusServiceClient`, `PersonRepository` | All repos | `@workiva/grc-state` API layer (RTK Query + Apollo) | **Replaced** |
+| `export/` | CSV/data export | grc_universe_client | `@workiva/ts-grc-grid-export-ui` | **Replaced** |
+| `graph_client/` | Graph DB client configuration | All repos | Not needed — ts-grc uses GraphQL directly | **Removed** |
+| `status_manager/` | Workflow status management | form_config, request_portal | Built into domain-specific packages | **Replaced** |
+| `models/` | Shared data models (Frugal types) | All repos | GraphQL-generated TypeScript types | **Replaced** |
+| `linking/` | Document/resource linking | framework_explorer | Built into specific clients | **Replaced** |
+| `embedded_spreadsheet/` | Embedded spreadsheet component | request_portal (sample matrix) | **Open question** — may need new implementation | **Unknown** |
+| `environment.dart` | Service URL resolution | All repos | `@workiva/wdesk_browser_environment` (TS version) | **Replaced** |
+| `intl/` | Shared i18n strings | All repos | `react-intl` per package | **Replaced** |
+
+**Migration impact:** graph_ui is NOT migrated as a whole — its subsystems are replaced by purpose-specific ts-grc packages. No single TS package replaces graph_ui.
+
+### Deep Dive: w_outline (Virtualized Tree — Org Blocker)
+
+`w_outline` renders large virtualized tree structures (tens of thousands of nodes). Used by `framework_explorer` for the left-panel framework hierarchy.
+
+**Usage in framework_explorer:**
+- `lib/src/explorer/extensions.dart` — imports `package:w_outline/w_outline.dart`, configures outline module
+- `lib/src/explorer/explorer_experience.dart` — loads outline as child module, passes framework element data
+- `lib/src/explorer/explorer_experience_config.dart` — registers `w_outline.css` and `w_table` assets
+- `test/unit/explorer/outline_adapter_test.dart` — tests outline adapter
+
+**Org-wide status:** The TypeScript Adoption analysis (Oct 2025) identifies `w_outline` as **Critical Blocker #2** — needed by RRPL (Taxonomy Analyzer 2), ESG (Explorer outline rework), and SCM. The ESG team has an active "beach head" project reworking the outline in TypeScript.
+
+**ts-grc status:** The `framework-reference-client` package in ts-grc is already in production WITHOUT using w_outline. It appears to have implemented its own tree/list rendering using standard React patterns (likely react-virtuoso or similar).
+
+**Migration action:** For the GRC POC, `w_outline` is **not a blocker** — graph_admin doesn't use it, and framework_explorer already has a TS equivalent. Track the ESG team's work for a shared org-wide solution.
+
+### Deep Dive: w_table
+
+`w_table` provides a virtualized table component. Found only in `framework_explorer`:
+
+```
+framework_explorer/lib/src/explorer/explorer_experience_config.dart:
+  'packages/w_table/wtableBindings.js'
+  'packages/w_table/style/w_table.css'
+```
+
+This is loaded as static JS/CSS assets, not as a Dart import. The ts-grc equivalent is `@workiva/ts-grc-data-grid-next` (wrapping MUI DataGridPro) or standard MUI `Table`.
+
+### Deep Dive: Platform & MFE Service Packages
+
+| Dart Package | Purpose | ts-grc Equivalent | Version |
+|---|---|---|---|
+| `wdesk_sdk` | MFE experience framework, `createMfe()`, `createApp()`, `DrawerExperience`, `AppContext` | `@workiva/microfrontend` + `@workiva/drawer_experience_contribution` | `^2.14.1` / `^1.1.14` |
+| `microfrontend` | MFE client SDK, `WdeskExtension`, `RegisterContribution` | `@workiva/microfrontend` | `^2.14.1` |
+| `session_mfe_service` | Session proxy (`registerSessionServiceProxyV2()`, `getSession()`) | `@workiva/session_mfe_service` | `^1.54.174` |
+| `modal_mfe_service` | Cross-MFE modal management (`ModalManager`, `UnifyDialogManager`) | MUI `Dialog` + custom hooks (no direct MFE service equivalent) | N/A |
+| `notification_mfe_service` | Toast/progress notifications | `@workiva/notifications` (workspace package) | N/A |
+| `messaging_mfe_service` | NATS messaging proxy | Not used in ts-grc (no browser NATS) | N/A |
+| `navigator_mfe_service` | Cross-experience navigation | `@workiva/navigator_mfe_service` | `^1.4.323` |
+| `static_asset_loader` | CSS/JS asset loading for MFEs | Not needed — Vite bundles assets | N/A |
+| `wdesk_browser_environment` | `Environment.current`, service URI resolution | `@workiva/wdesk_browser_environment` | `^1.17.60` |
+| `rich_experience_contribution` | Rich experience base classes | `@workiva/panel_contribution_point` (for panels) | `^1.3.46` |
+| `task_portal_contribution_point` | Task portal extension | `@workiva/task_portal_contribution_point` | `^4.54.174` |
+
+### Deep Dive: State Management Packages
+
+| Dart Package | Used By | Pattern | ts-grc Equivalent |
+|---|---|---|---|
+| `w_flux` ^3.0.3 | graph_admin, framework_explorer, requests_client, request_portal, form_config, assessments_client | Flux: `Store` + `ActionV2` + `triggerOnActionV2` | **Replace** with React hooks (`useState`/`useReducer`) for small modules, Redux Toolkit for large ones |
+| `redux` ^5.0.0 | grc_universe_client, requests_client, request_portal, assessments_client, form_config | Redux: `Store` + `TypedReducer` + `combineReducers` | **Replace** with `@reduxjs/toolkit` `createSlice` |
+| `redux_thunk` ^0.4.0 | grc_universe_client, requests_client, assessments_client, form_config | Thunks with `ExtraArgumentThunkMiddleware` | **Replace** with RTK `createAsyncThunk` |
+| `redux_saga` ^3.3.0 | framework_explorer | Sagas for complex async flows (debounce, takeLatest) | **Replace** with RTK Query or RTK listener middleware |
+| `redux_dev_tools` ^0.7.0 | assessments_client, form_config | Redux DevTools bridge | **Replace** with Redux DevTools browser extension (built-in with RTK) |
+| `built_value` / `built_collection` | grc_universe_client, framework_explorer, assessments_client, requests_client, request_portal, form_config | Immutable value types with codegen | **Remove** — TypeScript has native readonly patterns; RTK uses Immer |
+
+### Deep Dive: API & Data Packages
+
+| Dart Package | Purpose | Used By | ts-grc Equivalent | Migration Path |
+|---|---|---|---|---|
+| `frugal` ^3.23.x | Thrift-over-NATS/HTTP RPC framework | All 7 repos | **None** — Frugal has no TS SDK | Use GraphQL/REST instead (see Section 8) |
+| `graph_api` ^16.200.x | Generated Frugal types for graph-server | All 7 repos | `@workiva/graphql` (GraphQL schema types) | GraphQL codegen replaces Frugal types |
+| `graph_form_api` ^3.153.x | Form service Frugal stubs | form_config | `@workiva/graphql` + `@workiva/grc-state` | GraphQL mutations |
+| `graph_rpc_api` ^5.x | Graph RPC Frugal stubs (assessment, framework, workflow services) | assessments_client, framework_explorer, form_config | `@workiva/graphql` | GraphQL codegen |
+| `grc_services_frugal` ^4.41.x | GRC services Frugal stubs (permissions, request services) | requests_client, request_portal, assessments_client, form_config, grc_universe_client | `@workiva/graphql` + `@workiva/grc-state` | GraphQL/REST replaces all Frugal calls |
+| `licensing_api` / `licensing_frugal` | Ability/permission checks | All 7 repos | Identity REST API via `fetch()` (see `useIsAiEnabled.ts` pattern in ts-grc) | REST call to identity service |
+| `messaging_sdk` ^3.32.x | `FrugalMessagingProvider`, `NatsMessagingClient` | All 7 repos | **Not used in ts-grc** | Eliminated — GraphQL/REST replaces NATS transport |
+| `workspaces_api` ^2.29.x | Workspace/org search | graph_admin | Identity REST API | REST call to identity service |
+| `dio` ^5.9.x | HTTP client | grc_universe_client | `fetch` / Apollo Client / RTK Query | Standard browser fetch API |
+| `analytics` / `user_analytics` / `app_intelligence` | Event tracking | All repos | `@workiva/ts-grc-analytics` + `@workiva/analytics` | Direct equivalent exists |
+
+### Dependency Risk Summary
+
+| Risk Level | Packages | Impact |
+|---|---|---|
+| **No risk** (direct TS equivalent exists) | `unify_ui` → `@workiva/unify`, `launch_darkly` → `@workiva/grc-launch-darkly`, `analytics` → `@workiva/ts-grc-analytics`, `wdesk_browser_environment`, `session_mfe_service`, `navigator_mfe_service` | Drop-in replacement |
+| **Low risk** (pattern change, well-established) | `over_react` → React, `w_flux`/`redux` → RTK, `built_value` → TS types, `web_skin_dart` → `@workiva/unify`, `intl` → `react-intl`, `logging` → `@workiva/grc-logger` | Mechanical migration |
+| **Medium risk** (architecture change) | `graph_ui` → multiple ts-grc packages, `w_module` → React lifecycle, `frugal` → GraphQL/REST, `messaging_sdk` → eliminated | Requires design decisions per module |
+| **High risk** (no direct replacement) | `w_outline` → ESG beach head project (org blocker), `embedded_spreadsheet` → unknown | May block specific features |
+| **Unique to graph_admin** | `googleapis`/`googleapis_auth` → `googleapis` npm package | Separate OAuth2 flow for BigQuery |
+
 ---
 
 ## 6. Proposed TypeScript Architecture
