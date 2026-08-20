@@ -2547,79 +2547,181 @@ graph TB
 
 ---
 
-### Consolidated Challenges — Listed by Category
+### Consolidated Challenges — How Each Is Resolved in TypeScript
 
-#### API & Transport
+Each challenge lists: the Dart problem, how ts-grc solved it, and the specific TS package/tool used.
 
-1. **Frugal has no TypeScript SDK** — Org-wide hard blocker. No `@workiva/frugal` npm package exists. Every Dart Frugal call must switch to GraphQL or REST. GRC is mitigated — ts-grc already uses GraphQL/REST.
-2. **Backend teams must add REST/GraphQL endpoints for Frugal-only operations** — 5+ backend teams (graph-server, grc-evergreen, audit-request-service, form_service, identity) must confirm or expose REST/GraphQL for all operations currently called via Frugal across all 7 repos.
-3. **NATS real-time events have no TypeScript equivalent** — 4 repos (requests_client, assessments_client, form_config, request_portal) use NATS pub/sub for real-time bulk operation progress. ts-grc uses Apollo polling instead. Bulk operations will lose instant progress feedback unless GraphQL subscriptions are added.
+#### 1. Frugal RPC has no TypeScript SDK
+- **Dart:** `frugal` ^3.23.x — Thrift-over-NATS/HTTP RPC. Used by all 7 repos.
+- **How ts-grc solved it:** Eliminated Frugal entirely. All data access goes through GraphQL (primary) and REST (secondary) over standard HTTPS.
+- **TS packages used:** `@apollo/client` ^4.1.9 for GraphQL, `@reduxjs/toolkit` (RTK Query) for REST with OpenAPI codegen
+- **Evidence:** ts-grc has zero Frugal imports across 70+ packages. `packages/graphql/src/client.ts` creates Apollo Client pointing to `grc-evergreen/api/v1/grc-manager/graphql`.
+- **Remaining gap:** Backend teams must expose REST/GraphQL for any Frugal-only endpoints (graph-server admin, audit-request-service, form_service).
 
-#### Architecture & Platform
+#### 2. NATS messaging has no browser TypeScript client
+- **Dart:** `messaging_sdk` ^3.32.x — `NatsMessagingClient`, `FrugalMessagingProvider`, pub/sub subscriptions for real-time events. Used by all 7 repos.
+- **How ts-grc solved it:** Eliminated browser-side NATS. Uses Apollo Client polling (`pollInterval`) for near-real-time updates. Cross-MFE communication via `@workiva/navigator_mfe_service`.
+- **TS packages used:** `@apollo/client` (polling), `@workiva/navigator_mfe_service` ^1.4.323 (cross-experience events), `@workiva/notifications` (toast notifications)
+- **Remaining gap:** Bulk operation progress bars (requests, assessments) lose instant feedback. GraphQL subscriptions would restore real-time UX but require `grc-evergreen` support.
 
-4. **graph_ui monolith has no single TS replacement** — 15+ subsystems (FolderList, DataPanel, HistoryPanel, FormService, Permissions, GraphChangeMonitor) used by 5 of 7 repos, distributed across 10+ ts-grc packages. Highest risk: `FolderListExperience` (architectural skeleton of requests_client) and `VertexRulePermissionsDialogTrigger` (used by 3 repos, no TS equivalent).
-5. **w_comments and w_attachments have no full TS widget** — request_portal needs threaded comments (@-mentions, resolution) and file attachments (upload, download, preview). ts-grc has only partial coverage (pdf-markup, comments-library). Platform team or GRC must build replacements.
-6. **w_module lifecycle pattern must be redesigned** — 8 repos use `Module`, `loadChildModule`, `onLoad`/`onUnload`. React handles this through `useEffect` cleanup and `React.lazy`/`Suspense`. Mechanical but pervasive.
-7. **w_outline replacement (org blocker #2)** — Only affects framework_explorer (5 files). ts-grc's `framework-reference-client` works without it. ESG team has active beach head project. Not blocking either POC.
+#### 3. OverReact (Dart React wrapper) → native React
+- **Dart:** `over_react` ^5.7.0 — `UiFactory`, `uiFunction`, `UiComponent2`, `FluxUiComponent2`, props mixins, code generation (`.over_react.g.dart`). ~200+ components across all repos.
+- **How ts-grc solved it:** Uses native React 18 with TypeScript. No wrapper library. Functional components with hooks.
+- **TS packages used:** `react` ^18.3.1, `react-dom` ^18.3.1
+- **Pattern:** `mixin FooProps on UiProps` → `type FooProps = { ... }`. `uiFunction((props) => ...)` → `function Foo(props: FooProps) { ... }`. Code generation eliminated entirely.
 
-#### UI & Design System
+#### 4. web_skin_dart (legacy component library) → Unify
+- **Dart:** `web_skin_dart` ^3.x — Modal, Button, DropdownSelect, DatepickerInput, Icon, Form, etc. Used by 6 of 7 repos (~100+ files).
+- **How ts-grc solved it:** Uses `@workiva/unify` which provides native React/MUI components. Same Workiva design system, TypeScript bindings.
+- **TS packages used:** `@workiva/unify` ^2.32.1 (design system), `@mui/material` ^7.3.6 (MUI components), `@mui/x-date-pickers` (date pickers), `@workiva/ts-grc-component-library` (GRC-specific tokens + wrappers)
+- **Mapping:** Modal → `Dialog`, Button → `Button`, DropdownSelect → `Select`/`Autocomplete`, TextInput → `TextField`, DatepickerInput → `DatePicker`, Icon/IconGlyph → `UnifyIcons.*`
+- **Remaining gap:** 12 WSD components need custom React composition (DropTargetFileInput, VerticalToolbarButton, Click-to-Edit suite, Submenu, ActionGroup, DirectMentions).
 
-8. **web_skin_dart → Unify migration across 6 repos** — ~100+ files still import web_skin_dart. 12 WSD components have no direct Unify equivalent: DropTargetFileInput, VerticalToolbarButton variants (3), Click-to-Edit suite (7 variants), Submenu, ActionGroup, DirectMentions. Must be custom-built in React.
-9. **built_value immutable models → TypeScript types** — ~120+ code-generated models across 5 repos. Replaced by TypeScript interfaces + GraphQL-generated types. Mechanical but volume is high.
-10. **i18n migration (~700+ strings across 6 repos)** — request_portal (421), assessments_client (~150), framework_explorer (~100), requests_client (~100), form_config (~100), grc_universe_client (~120). All migrate from `Intl.message()` to `react-intl`. graph_admin has zero i18n.
+#### 5. unify_ui (Dart MUI wrapper) → @workiva/unify (native React)
+- **Dart:** `unify_ui` ^2.x — Dart bindings for MUI components (DataGridPro, Button, Dialog, Table, etc.). Used by all 7 repos.
+- **How ts-grc solved it:** `@workiva/unify` IS the same library but with native TypeScript/React bindings. Direct 1:1 mapping.
+- **TS packages used:** `@workiva/unify` ^2.32.1
+- **No gap.** Same component library, same API, no wrapper layer.
 
-#### State Management
+#### 6. w_flux (Flux state management) → Redux Toolkit / React hooks
+- **Dart:** `w_flux` ^3.0.3 — `Store`, `ActionV2`, `triggerOnActionV2`, `FluxUiComponent2`. Used by graph_admin, framework_explorer, form_config, request_portal, requests_client.
+- **How ts-grc solved it:** Uses Redux Toolkit for complex state, React hooks for simple state. Apollo Client cache for server state.
+- **TS packages used:** `@reduxjs/toolkit` ^2.12.0, `react-redux` ^8.1.3, `@apollo/client` (InMemoryCache)
+- **Pattern:** `Store` + `triggerOnActionV2` → `createSlice` + `createAsyncThunk`. Small modules → `useState`/`useReducer`.
 
-11. **w_flux → React state (3 repos)** — graph_admin, framework_explorer, and form_config use Flux (Stores + Actions + triggerOnActionV2). Must redesign as React hooks (small modules) or Redux Toolkit slices (complex modules).
-12. **Redux + redux_saga → Redux Toolkit** — framework_explorer uses `redux_saga` for debounced async flows. Migrate to RTK listener middleware or RTK Query.
+#### 7. Redux + redux_thunk + redux_saga → Redux Toolkit
+- **Dart:** `redux` ^5.0.0, `redux_thunk` ^0.4.0, `redux_saga` ^3.3.0, `built_value` immutable state. Used by 5 repos.
+- **How ts-grc solved it:** RTK includes thunk middleware by default. RTK uses Immer for immutable state (no code generation needed). Redux DevTools built-in.
+- **TS packages used:** `@reduxjs/toolkit` ^2.12.0 (includes createAsyncThunk, Immer, DevTools)
+- **Pattern:** `combineReducers` + `TypedReducer` → `createSlice`. `ExtraArgumentThunkMiddleware` → `createAsyncThunk` with `thunkAPI.extra`. `redux_saga` → RTK listener middleware or RTK Query.
 
-#### Deployment & Coordination
+#### 8. built_value / built_collection (immutable models) → TypeScript types
+- **Dart:** `built_value` ^8.5.0, `built_collection` ^5.1.1 — code-generated immutable value types (`.sg.dart` + `.g.dart`). ~120+ models across 5 repos.
+- **How ts-grc solved it:** Native TypeScript interfaces + types. GraphQL codegen generates typed response shapes. RTK uses Immer for immutability.
+- **TS packages used:** TypeScript native (`type`, `interface`, `readonly`), GraphQL codegen (`pnpm codegen:graphql`), Immer (via RTK)
+- **No code generation needed** for models — TypeScript's structural type system replaces built_value entirely.
 
-13. **wdesk release coordination to remove each Dart package** — `wdesk/pubspec.yaml` bundles `w_sox`, `request_portal`, `framework_explorer`. Removing each is a breaking change requiring: TS MFE stable in ALL environments → wdesk release removes Dart package → rollback plan if TS fails. 33 imports and 226 lines in `experience_registry.dart` to clean up.
-14. **Dual maintenance during transition** — Both Dart and TypeScript versions coexist per module during its migration window. Bug fixes must go to both. Feature development on Dart should be frozen per module.
-15. **Migration ordering — repos have interdependencies** — `request_portal` depends on `requests_client`. `graph_app` bundles 4 sub-modules. Recommended order: graph_admin → validate ts-grc parity → request_portal → form_config → remove w_sox from wdesk.
+#### 9. graph_ui monolith (shared GRC UI library) → distributed ts-grc packages
+- **Dart:** `graph_ui` v36–38 — monolithic package with FolderList, DataPanel, HistoryPanel, FormService, Permissions, GraphChangeMonitor, export, linking, status manager. Used by 5 of 7 repos.
+- **How ts-grc solved it:** Decomposed into purpose-specific packages. No single replacement.
+- **TS packages used:**
+  - FolderList → `@workiva/ts-grc-data-grid-next` (MUI DataGridPro)
+  - HistoryPanel → `@workiva/ts-grc-history-panel-ui`
+  - FormService/Permissions → `@workiva/grc-state` (GraphQL + RTK Query)
+  - Components → `@workiva/ts-grc-component-library`
+  - Export → `@workiva/ts-grc-grid-export-ui`
+  - Models → GraphQL-generated types
+- **Remaining gap:** `VertexRulePermissionsDialogTrigger`, `GraphChangeMonitor`, `embedded_spreadsheet` — no TS equivalents identified.
 
-#### Functional Gaps & Verification
+#### 10. wdesk_sdk (MFE experience framework) → TS MFE SDK
+- **Dart:** `wdesk_sdk` ^9.x — `createMfe()`, `createApp()`, `WdeskExtension`, `DrawerExperience`, `RichExperience`, `AppContext`, `ExperienceRegistry`. Used by all 7 repos.
+- **How ts-grc solved it:** Uses Workiva's TypeScript MFE SDK packages. ESM module entry points registered via `manifest.yaml`.
+- **TS packages used:**
+  - `@workiva/microfrontend` ^2.14.1 — `createEsmExtension()`
+  - `@workiva/drawer_experience_contribution` ^1.1.14 — `DrawerExperienceContribution`, `DrawerExperience`, `DrawerContentComponentV2`
+  - `@workiva/panel_contribution_point` ^1.3.46 — panel contributions
+  - `@workiva/task_portal_contribution_point` ^4.54.174 — task portal
+  - `@workiva/vite-plugin-microfrontend` ^2.13.21 — Vite build plugin
+- **Pattern:** `WdeskExtension.onRegisterContributions()` → `createEsmExtension({ contributions: [...] })`. `DrawerExperience.onLoad()` → `DrawerExperience.load()` with `createRoot().render()`.
 
-16. **Feature parity gaps in 4 modules already in ts-grc** — universe (~50 Dart components), framework_explorer (~60), assessments (~55), requests (~35) have TS equivalents but parity has NOT been systematically verified. Charts, bulk operations, UCF integration, drag-and-drop, GenAI dialog — status unknown.
-17. **Landing page widgets from MFE (10 widgets)** — graph_app provides 10 landing page widget configs. The MFE manifest contribution point for widgets needs verification with wdesk_sdk team.
-18. **Embeddable experiences from MFE (2 embeddables)** — graph_app has `createSampleSelectionExperienceConfig` and `createTestFormSpreadsheetExperienceConfig`. MFE support for embeddables needs verification.
-19. **embedded_spreadsheet (graph_ui) — no TS equivalent** — Used by request_portal's sample matrix. No ts-grc package identified for this. May need new implementation.
+#### 11. w_session (auth/session) → session MFE service
+- **Dart:** `w_session` ^7.10.x — `Session`, `getAccessToken()`, `getAccountResourceId()`, `getMembershipResourceId()`, `getOrganizationId()`. Used by all 7 repos.
+- **How ts-grc solved it:** Same session data from the TypeScript MFE service client.
+- **TS packages used:** `@workiva/session_mfe_service` ^1.54.174 — `getSession()` returns `getAccessToken`, `getAccountResourceId`, `getMembershipResourceId`, `getOrganizationId`, `getUserResourceId`, `getUsername`
+- **Evidence:** `TsGrcDrawerExperience.tsx` calls `const { getAccessToken, ... } = await getSession()` — identical data.
 
-#### Testing & Quality
+#### 12. licensing_api / licensing_frugal (ability checks) → REST + feature flags
+- **Dart:** `licensing_api` ^4.x, `licensing_frugal` ^5.x — `LicensingApi.canUserV4(abilityId: N)`, `LicensingApi.getAbilities()`. Used by all 7 repos.
+- **How ts-grc solved it:** Two approaches: REST call to identity service for ability IDs, and LaunchDarkly for feature flags.
+- **TS packages used:** `@workiva/feature-flags` ^1.1.110, `@workiva/grc-launch-darkly` ^0.1.217, `@openfeature/web-sdk` ^1.9.0, `fetch()` to identity REST API
+- **Evidence:** `useIsAiEnabled.ts` calls `fetch(identityServiceUri/api/v1/contexts/{workspaceId}/users/{userId}/abilities/ids)` — direct REST, no Frugal.
 
-20. **Functional testing strategy is undefined (org-wide gap)** — Migration from Dart Puppeteer to TypeScript Playwright has no org-wide guidance. ts-grc uses Playwright already — GRC POC should formalize as template.
+#### 13. launch_darkly (Dart feature flags) → LaunchDarkly TS SDK
+- **Dart:** `launch_darkly` ^2.12.x — `flagManager.variationOr('flag-name', default)`. Used by 6 repos.
+- **How ts-grc solved it:** Same LaunchDarkly service via TypeScript SDK wrapper.
+- **TS packages used:** `@workiva/grc-launch-darkly` ^0.1.217 (wraps LaunchDarkly React SDK), `@workiva/feature-flags` ^1.1.110
+- **Pattern:** `flagManager.variationOr('flag', false)` → `useAppFlags()` hook. MFE manifest also supports `can_user_access: "feature_flag.flag-name"` for experience-level gating.
 
-#### Capacity & Process
+#### 14. w_intl / intl (Dart i18n) → react-intl
+- **Dart:** `intl` ^0.18.1, `w_intl` ^2.x — `Intl.message('text', name: 'ClassName_key')`, `Intl.plural()`, `Intl.formattedMessage()`. ~700+ strings across 6 repos.
+- **How ts-grc solved it:** `react-intl` with `@formatjs/ts-transformer` for compile-time message ID generation.
+- **TS packages used:** `react-intl` ^6.8.9, `@workiva/intl` ^0.5.48, `@workiva/w_intl_ts` ^1.0.1, `@formatjs/ts-transformer` ^3.13.32
+- **Pattern:** `Intl.message('Save', name: 'X_save')` → `<FormattedMessage defaultMessage="Save" description="Save button label" />` or `intl.formatMessage({ defaultMessage: 'Save', description: '...' })`. IDs auto-generated — never provide manual IDs.
 
-21. **Capacity constraints** — Full migration needs 3–4 engineers over 18–26 weeks. graph_admin POC: 1 engineer, 1.5–2 weeks. Consider hybrid teams (FTEs for architecture, contractors for component porting).
+#### 15. analytics / user_analytics / app_intelligence → TS analytics
+- **Dart:** `analytics` ^1.0.x, `user_analytics` ^9.x, `app_intelligence` ^3.x — event tracking, user analytics, performance monitoring. Used by all 7 repos.
+- **How ts-grc solved it:** Unified analytics package with schema-driven events.
+- **TS packages used:** `@workiva/ts-grc-analytics` (workspace), `@workiva/analytics` ^1.0.97
+- **Pattern:** `safeTrack()` calls must match schemas in `packages/analytics/src/events/*`.
 
-#### Unique to graph_admin
+#### 16. w_module (module lifecycle) → React lifecycle
+- **Dart:** `w_module` ^3.0.12 — `Module`, `loadChildModule`, `ModuleComponents`, `onLoad`/`onUnload`, `ShouldUnloadResult`. Used by 8 repos.
+- **How ts-grc solved it:** React component lifecycle replaces module lifecycle. MFE mount/unmount replaces load/unload.
+- **TS packages used:** React `useEffect` (cleanup), `React.lazy` + `Suspense` (code splitting), `TsGrcDrawerExperience` (mount/unmount lifecycle)
+- **Pattern:** `Module.onLoad()` → `useEffect(() => { init(); return () => cleanup(); }, [])`. `loadChildModule(child)` → render child component in JSX.
 
-22. **BigQuery/Google OAuth2** — Support tools tab uses browser-side Google OAuth2 for BigQuery queries. Separate from WDesk SSO. Defer to Phase 2 of graph_admin migration.
+#### 17. w_common (Disposable lifecycle) → React hooks
+- **Dart:** `w_common` ^4.0.0 — `Disposable`, `ManagedStreamSubscription`, `manageDisposable()`. Used by all 7 repos.
+- **How ts-grc solved it:** React `useEffect` cleanup handles resource disposal. No Disposable pattern needed.
+- **TS packages used:** React `useEffect` (cleanup function), RxJS `Subject.complete()` where needed
+- **No package replacement** — React's built-in lifecycle handles this.
+
+#### 18. w_router (client-side routing) → react-router-dom
+- **Dart:** `w_router` ^2.2.x — `Router`, `MemoryHistory`, `addRoute()`. Used by 3 repos.
+- **How ts-grc solved it:** Standard React routing with a custom `RouterSettings` export pattern per feature package.
+- **TS packages used:** `react-router-dom` ^6.30.3, `@workiva/router` (workspace — wraps react-router-dom with MFE route sync)
+- **Pattern:** Each feature package exports `routerSettings: RouterSettings = { routes: [...] }`. `MfeRouter` component handles shell↔MFE route synchronization.
+
+#### 19. Dio (HTTP client) → fetch / Apollo / RTK Query
+- **Dart:** `dio` ^5.9.2 — HTTP client with interceptors, OAuth2, timeouts. Used by grc_universe_client, framework_explorer.
+- **How ts-grc solved it:** Apollo Client for GraphQL, RTK Query for REST, native `fetch` for simple calls.
+- **TS packages used:** `@apollo/client` ^4.1.9, `@reduxjs/toolkit` (RTK Query), native `fetch` API
+- **Pattern:** `Dio(BaseOptions(baseUrl: ..., headers: ...))` → Apollo `authLink` + `httpLink` or `fetch()` with `await getSession().getAccessToken()`.
+
+#### 20. w_graph_client (graph database client) → GraphQL
+- **Dart:** `w_graph_client` ^10.x — `GraphClientModule`, `registerGraphClientServices()`, version subscriptions. Used by 7 repos.
+- **How ts-grc solved it:** Direct GraphQL queries to `grc-evergreen`. No intermediate client module.
+- **TS packages used:** `@workiva/graphql` (workspace — Apollo Client config + schema), `@workiva/grc-state` (RTK Query for REST)
+- **Pattern:** `registerGraphClientServices(frugalMessagingProvider)` → deleted. `graphClient.getEntity(id)` → `useQuery(GET_ENTITY, { variables: { id } })`.
+
+#### 21. modal_mfe_service / notification_mfe_service → React dialogs + notifications
+- **Dart:** `modal_mfe_service` ^1.74.x — `ModalManager.confirm()`, `UnifyDialogManager.show()`. `notification_mfe_service` ^1.71.x — toast notifications. Used by all repos.
+- **How ts-grc solved it:** In-process React dialogs + notification context.
+- **TS packages used:** `@workiva/unify` `Dialog` + MUI `Dialog` (modals), `@workiva/notifications` (workspace — wraps toasts)
+- **Pattern:** `modalManager.confirm('Are you sure?')` → `<Dialog open={open}>` controlled by React state. `notificationService.addProgressItem()` → `notify('message', { severity: 'success' })`.
+
+#### 22. wdesk_browser_environment → same package (TS bindings)
+- **Dart:** `wdesk_browser_environment` ^1.17.x — `Environment.current`, `getServiceUri()`, `Modes`. Used by all 7 repos.
+- **How ts-grc solved it:** Same package with TypeScript bindings.
+- **TS packages used:** `@workiva/wdesk_browser_environment` ^1.17.60
+- **No gap.** `Environment.getServiceUri('grc-evergreen')` works identically in TypeScript.
 
 ---
 
-### Already Solved — Not Challenges
+### Challenges Without Existing TypeScript Solutions
 
-1. **Can TypeScript MFEs run inside the Dart wdesk shell?** — Yes, in production. ts-grc runs 20+ TS experiences in the Dart shell today.
-2. **Multiple React runtimes in the same browser** — Solved. `identifierPrefix: 'ts-grc-drawer'` prevents `useId` collisions.
-3. **Authentication in TypeScript MFEs** — Solved. `@workiva/session_mfe_service` provides the same auth context as Dart.
-4. **Feature-flagged rollout** — Solved. Manifest `can_user_access: "feature_flag.*"` proven in production.
-5. **Independent deployment and rollback** — Solved. FEWS CDN + `pipeline_template.yaml`. Rollback = re-deploy previous BUILD_ID.
-6. **Design system in TypeScript** — Solved. `@workiva/unify ^2.32.1` provides native React components.
-7. **Cross-experience navigation (Dart↔TS)** — Solved. `@workiva/navigator_mfe_service` routes between Dart and TS experiences.
-8. **Dart and TypeScript coexistence in wdesk** — Solved. Already the production reality.
-9. **Migrate one repo at a time** — Solved. Each MFE registers independently via manifest. No "all or nothing" cutover.
-10. **API layer replacement (Frugal → GraphQL)** — Solved for GRC. ts-grc uses Apollo Client + RTK Query against the same `grc-evergreen` backend.
+These items have NO proven ts-grc solution and need new work or platform team support:
+
+| # | Challenge | What's Missing | Who Must Solve It |
+|---|---|---|---|
+| 1 | **Backend REST/GraphQL endpoints for Frugal-only services** | graph-server admin, audit-request-service, form_service may only have Frugal endpoints | Backend teams (per service) |
+| 2 | **w_comments — threaded comments widget** | No full TS widget for @-mentions, threads, resolution. `@workiva/comments-library` exists but scope unclear | DocPlat / Platform team |
+| 3 | **w_attachments — file upload/download/preview widget** | Only partial coverage via `pdf-markup`, `grc-evidence-components` | DocPlat / Platform team |
+| 4 | **graph_ui `VertexRulePermissionsDialogTrigger`** | Permissions dialog used by 3 repos — no TS equivalent | GRC team (build in ts-grc) |
+| 5 | **graph_ui `GraphChangeMonitor`** | Real-time graph mutation monitoring — no TS equivalent | GRC team (use Apollo polling or subscriptions) |
+| 6 | **graph_ui `embedded_spreadsheet`** | Sample matrix in request_portal — no TS equivalent | GRC team (build with MUI DataGrid or custom) |
+| 7 | **NATS real-time bulk operation progress** | Polling degrades UX vs instant NATS push | grc-evergreen team (add GraphQL subscriptions) |
+| 8 | **Landing page widgets from MFE** | 10 graph_app widgets — MFE contribution point unverified | wdesk_sdk team (verify) |
+| 9 | **Embeddable experiences from MFE** | 2 graph_app embeddables — MFE support unverified | wdesk_sdk team (verify) |
+| 10 | **wdesk release coordination** | Removing Dart packages from `wdesk/pubspec.yaml` is a breaking change | wdesk team + GRC team |
+| 11 | **Feature parity audit** | 4 ts-grc modules need systematic Dart↔TS feature comparison | GRC team |
+| 12 | **Functional testing strategy** | No org-wide Dart Puppeteer → TS Playwright migration guidance | FEF / GRC (formalize ts-grc's Playwright approach) |
+| 13 | **BigQuery OAuth2 in graph_admin** | Browser-side Google OAuth2 for support queries | GRC team (use `googleapis` npm or backend proxy) |
 
 ### Challenge Count
 
-| Severity | Count |
+| Category | Count |
 |---|---|
-| Hard Blockers (API/Transport + Deployment) | 3 (#1, #2, #13) |
-| High Priority (Architecture + UI + Platform) | 6 (#4, #5, #8, #9, #14, #16) |
-| Medium Priority (State + Data + Testing) | 7 (#3, #6, #10, #11, #12, #15, #20) |
-| Low Priority (Verification + Capacity) | 6 (#7, #17, #18, #19, #21, #22) |
-| Already Solved | 10 |
-| **Total** | **32** (22 active + 10 solved) |
+| Challenges with proven ts-grc solutions (resolved) | 22 |
+| Challenges needing new work (open) | 13 |
+| **Total** | **35** |
