@@ -2308,84 +2308,239 @@ This GRC migration is fully aligned with the five strategic recommendations from
 
 ---
 
-## Appendix B: Consolidated Blockers, Challenges & Action Items
+## Appendix B: Consolidated Blockers, Challenges & Action Items — Full Migration Scope
 
-### Hard Blockers (Must Resolve Before Migration Can Proceed)
+> **Scope:** This appendix covers blockers for migrating ALL 7 repos (graph_admin, grc_universe_client, framework_explorer, assessments_client, form_config, requests_client, request_portal) to TypeScript, including the wdesk host integration challenge.
 
-1. **Backend REST/GraphQL endpoint availability for graph_admin** — The `graph-server` admin service currently exposes operations only via Frugal. TypeScript cannot call Frugal (no TS SDK exists). The backend team must confirm or add REST endpoints for all 8 admin operations + 2 support service operations before the POC can start.
-   - **Owner:** graph-server / graph-backend team
-   - **Action:** Audit `graph-server` for existing REST endpoints alongside Frugal; add missing ones
-   - **Timeline:** Must resolve in first 1–2 days of POC
+### The Central Architecture Question: wdesk Is Dart — Is This Feasible?
 
-2. **GraphQL coverage for request_portal operations** — The follow-on POC (request_portal) calls `audit-request-service` via Frugal for request CRUD, bulk creation, and event subscriptions. All these operations must be available as GraphQL queries/mutations in `grc-evergreen` before the TS migration.
-   - **Owner:** grc-evergreen / backend team
-   - **Action:** Audit the 48K-line GraphQL schema for request portal operations; identify gaps
-   - **Timeline:** Must resolve before Phase 2 POC starts
+**Yes, it is feasible. Here is the verified evidence:**
 
-3. **Frugal has no TypeScript SDK (org-wide blocker #1)** — Confirmed by the org-wide TypeScript adoption analysis (Oct 2025): *"Frugal is not supported in TypeScript."* No `@workiva/frugal` npm package exists. ts-grc (70+ packages) contains zero Frugal imports. Every Dart module using Frugal must switch to GraphQL or REST.
-   - **Owner:** FEF / Platform team (org-wide)
-   - **Impact on GRC:** Mitigated — ts-grc already uses GraphQL/REST. But backend teams must expose REST/GraphQL for any Frugal-only endpoints.
+The wdesk shell (`wdesk/pubspec.yaml`) is a Dart monolith that currently bundles GRC modules at **compile time**:
 
-### High-Priority Challenges (Significant effort, known solutions exist)
+| wdesk Compile-Time Dependency | Static Registration in `experience_registry.dart` | Can Become TS MFE? |
+|---|---|---|
+| `w_sox` (graph_app → universe, assessments, framework, requests) | 25+ drawer/rich experiences + 10 landing page widgets + 2 embeddable experiences | **Yes** — ts-grc already does this for 20+ experiences |
+| `request_portal` | `RequestPortalExperienceConfig`, `HBRichExperienceConfig` | **Yes** — same MFE pattern |
+| `framework_explorer` | `FrameworkExplorerExperienceConfig`, `FrameworkExplorerGlobalNavLinkExperienceConfig` | **Yes** — ts-grc `phoenix-framework-reference` already replaces this |
+| `requests_client` | `RequestListExperienceContribution` (registered via w_sox) | **Yes** — ts-grc `phoenix-request-for-task-portal` already replaces task portal path |
 
-4. **`graph_ui` monolith decomposition** — `graph_ui` (v36–38, used by 5 of 7 repos) is a monolithic Dart package with 15+ subsystems (FolderList, DataPanel, HistoryPanel, FormService, Permissions, GraphChangeMonitor). It has NO single TypeScript equivalent — its functionality is distributed across 10+ ts-grc packages. Each consuming repo needs its graph_ui dependencies mapped to the correct ts-grc package.
-   - **Affected repos:** requests_client, request_portal, framework_explorer, assessments_client, grc_universe_client
-   - **Highest risk subsystem:** `FolderListExperience` — the architectural skeleton of requests_client's list view
+**The key insight:** wdesk supports TWO loading models simultaneously:
 
-5. **web_skin_dart → Unify migration** — 6 of 7 repos still import web_skin_dart components. 12 WSD components have NO direct Unify equivalent and need custom composition (DropTargetFileInput, VerticalToolbarButton, Click-to-Edit suite, Submenu, ActionGroup, DirectMentions).
-   - **Heaviest consumers:** graph_admin (50+ WSD imports, many dead), request_portal (46 files), requests_client (12 files)
-   - **Fully migrated already:** grc_universe_client (zero WSD imports)
+1. **Compile-time bundling** — Dart packages listed in `wdesk/pubspec.yaml` with experiences statically registered in `experience_registry.dart`. This is the OLD model.
 
-6. **NATS real-time event replacement** — Several modules use NATS pub/sub for real-time status updates (bulk action progress in requests_client, assessment completion in assessments_client, form publish in form_config). ts-grc uses Apollo polling instead — no browser NATS. Users who depend on instant feedback may notice degradation.
-   - **Action:** Inventory which real-time behaviors users actively rely on; implement Apollo polling as baseline; investigate GraphQL subscriptions as enhancement
-   - **Owner:** Product management (user impact) + grc-evergreen team (subscription support)
+2. **Runtime MFE loading** — MFEs deployed to FEWS CDN, discovered at runtime via `manifest.yaml` contribution points. wdesk's `web/manifest.yaml` declares extension points (`core: {}`) that MFEs contribute to. This is the NEW model.
 
-7. **w_comments and w_attachments have no full TypeScript equivalent** — request_portal uses `w_comments` (threaded comments with @-mentions) and `w_attachments` (file upload/download/preview). ts-grc has only partial coverage via `pdf-markup` and `grc-evidence-components`. The full widget functionality must be rebuilt or the platform team must provide TS equivalents.
-   - **Affected repos:** request_portal, requests_client
-   - **Owner:** DocPlat / Platform team (for shared widget) or GRC team (for domain-specific rebuild)
+**Both models coexist today.** The wdesk shell loads:
+- Compile-time Dart modules (w_sox, request_portal, framework_explorer, etc.)
+- Runtime Dart MFEs (form_config, graph_admin)
+- Runtime TypeScript MFEs (ts-grc — 20+ experiences)
 
-8. **Dual maintenance during transition** — Both Dart and TypeScript versions coexist during migration. Bug fixes must be applied to both. Feature development on Dart versions should be frozen for migrating modules to avoid compounding technical debt.
-   - **Mitigation:** Minimize transition window; use feature flags for clean cutover; communicate feature freeze to product stakeholders
+**Migration path per module:** Deploy the TypeScript MFE to FEWS → validate in wk-dev/staging → remove the Dart package from `wdesk/pubspec.yaml` and its static registration from `experience_registry.dart` → coordinate wdesk release.
 
-### Medium-Priority Challenges (Known path, moderate effort)
+**Precedent:** This exact process is planned for graph_app's MFE migration (documented in `graph_app_mfe_migration_plan.md`, 846 lines). form_config has already completed it.
 
-9. **w_flux → React state migration** — graph_admin, framework_explorer, and form_config use `w_flux` (Flux pattern: Stores + Actions + triggerOnActionV2). This is architecturally different from React hooks or Redux Toolkit. Each store must be redesigned as React state (`useState`/`useReducer` for small modules) or Redux Toolkit slices (for complex ones).
-   - **graph_admin:** 2 stores (AccountsStore 333 LOC, SupportStore 164 LOC) → React hooks sufficient
-   - **form_config:** 1 store with complex state → Redux Toolkit slice recommended
+```mermaid
+graph TB
+    subgraph "wdesk Shell (Dart — stays Dart)"
+        WDESK[wdesk shell<br/>Dart monolith]
+        ER[experience_registry.dart<br/>Static registrations]
+        MFE_LOADER[MFE Runtime Loader<br/>FEWS manifest discovery]
+    end
 
-10. **built_value immutable models → TypeScript types** — 5 of 7 repos use `built_value` for code-generated immutable value types (`.sg.dart` + `.g.dart` files). These are replaced by native TypeScript interfaces + GraphQL-generated types. No code generation needed, but each model must be manually mapped or auto-generated from the GraphQL schema.
-    - **Affected repos:** grc_universe_client (~20 models), framework_explorer (~30 models), assessments_client (~35 models), requests_client, request_portal
+    subgraph "Current: Compile-Time Bundled (Dart)"
+        W_SOX[w_sox / graph_app<br/>25+ experiences]
+        RP_DART[request_portal<br/>3 experiences]
+        FE_DART[framework_explorer<br/>2 experiences]
+        RC_DART[requests_client<br/>via w_sox]
+    end
 
-11. **421 i18n strings in request_portal** — request_portal has 421 `Intl.message()` strings in a single `request_portal_intl.dart` file. These must be migrated to `react-intl` `<FormattedMessage>` / `intl.formatMessage()` patterns with auto-generated IDs. Includes plural forms and rich formatted messages with embedded React elements.
-    - **graph_admin has zero i18n** (hardcoded English for internal tool — not a blocker for Phase 1)
+    subgraph "Current: Runtime MFEs (Dart)"
+        FC_DART[form_config MFE]
+        GA_DART[graph_admin MFE]
+    end
 
-12. **BigQuery/Google OAuth2 in graph_admin** — The support tools tab uses `googleapis` + `googleapis_auth` for browser-side OAuth2 implicit flow to Google BigQuery. This is a separate auth flow from WDesk SSO. TypeScript equivalent exists (`googleapis` npm package) but requires separate integration.
-    - **Mitigation:** Defer BigQuery support tab to Phase 2 of graph_admin migration; focus Phase 1 on the Accounts tab
+    subgraph "Current: Runtime MFEs (TypeScript)"
+        TSGRC[ts-grc MFE<br/>20+ experiences]
+    end
 
-13. **Functional testing strategy undefined (org-wide)** — The org-wide TypeScript adoption analysis flags functional testing as an unresolved question. The migration path from Dart Puppeteer tests to TypeScript Playwright tests needs definition. ts-grc already uses Playwright — the GRC POC should formalize this as a template.
-    - **Action:** Document the Playwright testing approach during the graph_admin POC; share with the TS SteerCo as organizational guidance
+    WDESK --> ER
+    WDESK --> MFE_LOADER
+    ER -->|compile-time| W_SOX
+    ER -->|compile-time| RP_DART
+    ER -->|compile-time| FE_DART
+    MFE_LOADER -->|runtime FEWS| FC_DART
+    MFE_LOADER -->|runtime FEWS| GA_DART
+    MFE_LOADER -->|runtime FEWS| TSGRC
 
-### Low-Priority Challenges (Known path, low effort)
+    style TSGRC fill:#4caf50,color:white
+    style FC_DART fill:#ff9800,color:white
+    style GA_DART fill:#ff9800,color:white
+```
 
-14. **`w_outline` replacement (org blocker #2)** — Only affects `framework_explorer` (5 files). ts-grc's `framework-reference-client` is already in production without w_outline. ESG team has an active beach head project. Not a blocker for either POC.
+**After full migration:**
 
-15. **`w_module` lifecycle pattern** — 8 of 10 repos use `w_module` (Module, loadChildModule, onLoad/onUnload). React handles lifecycle through `useEffect` cleanup and `React.lazy`/`Suspense`. Mechanical migration — well-understood pattern.
+```mermaid
+graph TB
+    subgraph "wdesk Shell (Dart — unchanged)"
+        WDESK[wdesk shell<br/>Dart monolith]
+        ER[experience_registry.dart<br/>GRC entries REMOVED]
+        MFE_LOADER[MFE Runtime Loader<br/>FEWS manifest discovery]
+    end
 
-16. **Capacity constraints** — The org-wide analysis identifies FTE alignment as a challenge. The graph_admin POC needs only 1 engineer for 1.5–2 weeks. request_portal needs 2 engineers for 4–6 weeks. Consider hybrid approach (FTEs for architecture, contractors for component porting).
+    subgraph "All GRC: Runtime MFEs (TypeScript)"
+        TSGRC[ts-grc MFE<br/>ALL GRC experiences<br/>universe, assessments, frameworks,<br/>requests, request_portal,<br/>form_config, graph_admin]
+    end
 
-17. **wdesk bundle size reduction coordination** — After migration, removing Dart packages from `wdesk/pubspec.yaml` (w_sox, request_portal) requires a coordinated wdesk release. The TypeScript MFE must be stable in all environments before the Dart version is removed.
-    - **Owner:** wdesk team + GRC team
-    - **Precedent:** form_config has already demonstrated independent MFE deployment
+    WDESK --> MFE_LOADER
+    MFE_LOADER -->|runtime FEWS| TSGRC
 
-### Not Blockers (Already Solved)
+    style TSGRC fill:#4caf50,color:white
+```
+
+**Answer: wdesk does NOT need to be migrated to TypeScript.** It is the host shell — it loads MFEs regardless of their language. The Dart shell + TypeScript MFE pattern is the organization's endorsed "Golden Path" and is already in production.
+
+---
+
+### Hard Blockers (Must Resolve — Affects ALL Repos)
+
+1. **Frugal has no TypeScript SDK (org-wide blocker #1)** — Confirmed: *"Frugal is not supported in TypeScript."* Every Dart module using Frugal must switch to GraphQL or REST. This affects ALL 7 repos.
+   - **GRC mitigation:** ts-grc already uses GraphQL/REST instead of Frugal. The `grc-evergreen` backend serves both protocols simultaneously. Each migrating module needs its Frugal operations verified against the GraphQL schema.
+   - **Owner:** FEF / Platform team (org-wide replacement) + grc-evergreen team (GraphQL coverage)
+   - **Per-repo impact:**
+
+   | Repo | Frugal Services Called | GraphQL/REST Available? |
+   |---|---|---|
+   | graph_admin | `FAdminServiceClient` (HTTP), `FSupportServiceClient` (NATS), `WorkspacesService` | **Open question** — check graph-server for REST endpoints |
+   | grc_universe_client | OpenAPI-generated via `form_service` + `licensing_frugal` + `ViewSettingsClient` | **Mostly yes** — uses Dio/OpenAPI, not raw Frugal for main data |
+   | framework_explorer | `FFrameworkServiceClient` (HTTP) + REST fallback for UCF | **Partial** — already has REST fallback; check GraphQL |
+   | assessments_client | `FAssessmentServiceClient` (NATS) — all 9 operations | **Open question** — check grc-evergreen GraphQL schema |
+   | form_config | `FFormConfigServiceClient` (HTTP), `FWorkflowServiceClient` (HTTP) | **Open question** — check form_service REST/GraphQL |
+   | requests_client | `FAuditRequestServiceClient` (NATS + HTTP) — 9 operations + pub/sub events | **Open question** — check audit-request-service |
+   | request_portal | Inherits from requests_client + signed HTTP variant | **Open question** — same as requests_client |
+
+2. **Coordinated wdesk release required to remove each Dart module** — Each migrated module requires removing its Dart package from `wdesk/pubspec.yaml` AND its static experience registrations from `experience_registry.dart`. This is a **breaking change** to wdesk that must be sequenced AFTER the TypeScript MFE is stable in all environments.
+   - **wdesk currently bundles:** `w_sox` (lines 118–122), `request_portal` (lines 78–82), `framework_explorer` (lines 38–42), `requests_client` (via w_sox)
+   - **experience_registry.dart has:** 33 imports, 226 lines — removing GRC entries requires careful coordination
+   - **Critical ordering:** TypeScript MFE deployed to ALL environments → wdesk release removes Dart package → if TS MFE fails, wdesk must rollback to previous release WITH the Dart package
+   - **Owner:** wdesk team + GRC team
+   - **Precedent:** form_config has already demonstrated this; graph_app MFE migration plan documents the full process
+
+3. **Backend teams must expose REST/GraphQL for ALL Frugal-only endpoints** — This is not a single backend team's responsibility. Multiple backend services are involved:
+   - `graph-server` (admin service) — owned by graph-backend team
+   - `grc-evergreen` (GRC manager, GraphQL) — owned by GRC backend team
+   - `audit-request-service` — owned by audit/request team
+   - `form_service` — owned by forms team
+   - `identity-services` (licensing, workspaces) — owned by identity team
+   - Each team must confirm or add REST/GraphQL endpoints for the operations their frontends call via Frugal
+   - **Action:** Create a cross-team API audit matrix; assign owners per service; track in Jira
+
+### High-Priority Challenges (Affect Multiple Repos)
+
+4. **Feature parity gaps between Dart and ts-grc** — 4 of 7 repos already have ts-grc equivalents in production, but feature parity has NOT been systematically verified. If users are routed to the TypeScript version and features are missing, that's a regression.
+   - **Affected modules and risk:**
+
+   | Module | ts-grc Package | Key Risk |
+   |---|---|---|
+   | grc_universe_client (~50 components) | `universe-client` | Charts (Highcharts), bulk edit, CSV export, GenAI dialog — all present in Dart, parity unknown |
+   | framework_explorer (~60 components) | `framework-reference-client` | Drag-and-drop mapping, UCF integration, w_outline tree — parity unknown |
+   | assessments_client (~55 components) | `assessments-client` | Multi-step create wizard, bulk send/remind, starter templates — parity unknown |
+   | requests_client (~35 components) | `ts-grc-requests-ui` | FolderList-based table, bulk edit/delete, task portal — partial parity |
+
+   - **Action:** Per-module feature matrix: every Dart feature → TS equivalent → status (complete/partial/missing/not-needed)
+   - **Timeline:** Must complete before routing traffic away from Dart versions
+
+5. **`graph_ui` monolith decomposition** — `graph_ui` (v36–38, used by 5 of 7 repos, 100+ production files) is a monolithic Dart package with 15+ subsystems. It has NO single TypeScript equivalent — its functionality is distributed across 10+ ts-grc packages.
+   - **Most critical subsystems with no full TS equivalent:**
+     - `FolderListExperience` — the architectural skeleton of requests_client's list view → replaced by `ts-grc-data-grid-next` (MUI DataGridPro) but different API
+     - `FormServiceClientV2` / `PermissionsServiceClient` — used by 4 repos → replaced by GraphQL in ts-grc
+     - `VertexRulePermissionsDialogTrigger` — used by 3 repos → no TS equivalent identified
+     - `GraphChangeMonitor` — real-time graph mutation monitoring → no TS equivalent
+     - `DataPanelModule` — right-side detail panel → `ts-grc-history-panel-ui` (partial)
+     - `embedded_spreadsheet` — used by request_portal sample matrix → no TS equivalent identified
+
+6. **web_skin_dart → Unify migration across ALL repos** — 6 of 7 repos still import web_skin_dart. Total: ~100+ files with WSD imports across all repos. 12 WSD components have NO direct Unify equivalent.
+   - **Components requiring custom build:** DropTargetFileInput, VerticalToolbarButton/CheckboxButton/RadioButton, Click-to-Edit suite (7 variants), Submenu, ActionGroup, DirectMentions
+   - **Largest effort:** request_portal (46 files), requests_client (12 files), graph_admin `support_component.dart` (50+ WSD imports, many dead)
+
+7. **NATS real-time event replacement across modules** — 4 repos use NATS pub/sub for real-time UX:
+   - `requests_client`: Bulk action progress (delete, send, remind, update) via `subscribeBulkActionResponse`
+   - `assessments_client`: Bulk action events via `subscribeBulkActionResponse`
+   - `form_config`: Form publish notifications
+   - `request_portal`: Bulk creation progress via `subscribeBulkCreationResponse`
+   - ts-grc uses Apollo polling — no browser NATS. GraphQL subscriptions would be ideal but require `grc-evergreen` support (open question).
+   - **User impact:** Bulk operations currently show real-time progress bars. Polling degrades this to periodic refresh.
+
+8. **w_comments and w_attachments — platform-level gaps** — No full TypeScript widget for comments (@-mentions, threads, resolution) or attachments (upload, download, preview, inline viewer). ts-grc has partial coverage (`pdf-markup`, `grc-evidence-components`, `@workiva/comments-library`).
+   - **Affected repos:** request_portal (comments panel + attachments), requests_client (evidence attachments)
+   - **Blocking question:** Will DocPlat/Platform provide shared TS widgets, or must GRC build domain-specific equivalents?
+
+9. **Dual maintenance burden during transition** — ALL 7 repos require parallel Dart + TypeScript maintenance during their individual transition windows. Bug fixes must be applied to both. Features should be frozen on the Dart version.
+   - **Risk multiplier:** If all 7 repos transition sequentially over 6+ months, the dual-maintenance cost compounds
+   - **Mitigation:** Freeze Dart features for each repo as its migration starts; feature-flag the TS version for clean cutover; stagger repos to limit parallel work
+
+### Medium-Priority Challenges
+
+10. **Migration ordering and dependencies between repos** — The repos are not independent. `request_portal` depends on `requests_client`. `graph_app` bundles `grc_universe_client`, `framework_explorer`, `assessments_client`, and `requests_client`. Migration order matters.
+    - **Recommended order:**
+
+    | Phase | Repo | Rationale |
+    |---|---|---|
+    | 1 | graph_admin | Smallest, self-contained, zero customer risk, tests Frugal→REST path |
+    | 2 | Validate ts-grc parity (universe, assessments, frameworks, requests) | These already have TS equivalents — verify, don't rebuild |
+    | 3 | request_portal | Moderate size, customer-facing, exercises full migration pattern |
+    | 4 | form_config | Already independently deployed MFE — lowest urgency |
+    | 5 | Remove w_sox from wdesk | After ALL graph_app sub-modules are validated in ts-grc |
+
+11. **w_flux → React state migration (3 repos)** — graph_admin, framework_explorer, and form_config use `w_flux` (Flux: Stores + Actions + triggerOnActionV2). Each store must be redesigned as React hooks or Redux Toolkit slices.
+    - graph_admin: 2 stores (497 LOC total) → React hooks
+    - framework_explorer: Redux + redux_saga (complex) → Redux Toolkit
+    - form_config: Redux + thunks → Redux Toolkit
+
+12. **built_value models → TypeScript types (5 repos)** — ~120+ `built_value` models across all repos with code-generated serializers. Replaced by TypeScript interfaces + GraphQL-generated types.
+
+13. **i18n migration (~700+ strings total across repos)** — request_portal (421), assessments_client (~150), framework_explorer (~100), requests_client (~100), form_config (~100), grc_universe_client (~120). All must migrate from `Intl.message()` to `react-intl`. graph_admin has zero i18n.
+
+14. **BigQuery/Google OAuth2 in graph_admin** — Unique to graph_admin's support tools. Defer to Phase 2.
+
+15. **Functional testing strategy (org-wide gap)** — Migration from Dart Puppeteer to TypeScript Playwright. ts-grc already uses Playwright but no org-wide guidance exists.
+
+### Low-Priority Challenges
+
+16. **`w_outline` replacement** — Only `framework_explorer` (5 files). ts-grc's `framework-reference-client` works without it. ESG beach head project tracked.
+
+17. **`w_module` lifecycle pattern** — Mechanical migration to React `useEffect` cleanup. Well-understood.
+
+18. **Landing page widgets from MFE** — graph_app provides 10 landing page widget configs. The MFE manifest contribution point for widgets needs verification. (Documented in `graph_app_mfe_migration_plan.md` as open question.)
+
+19. **Embeddable experiences from MFE** — graph_app has 2 embeddable experience configs (`createSampleSelectionExperienceConfig`, `createTestFormSpreadsheetExperienceConfig`). MFE support for embeddables needs verification.
+
+20. **wdesk bundle size reduction** — After removing w_sox + request_portal + framework_explorer from wdesk, the bundle should shrink significantly. Measure and communicate the improvement.
+
+21. **Capacity constraints** — graph_admin POC: 1 engineer, 1.5–2 weeks. Full migration: 3–4 engineers, 18–26 weeks. Consider hybrid teams.
+
+### Already Solved (Not Blockers)
 
 | Challenge | Status | Evidence |
 |---|---|---|
-| Multiple React runtimes in same browser | **Solved** | `identifierPrefix: 'ts-grc-drawer'` prevents `useId` collisions |
-| MFE registration from TypeScript | **Solved** | ts-grc registers 20+ MFE extensions via `manifest.yaml` |
-| Authentication in TypeScript MFE | **Solved** | `@workiva/session_mfe_service` provides `getSession()` with all auth context |
-| Feature flag gating for rollout | **Solved** | Manifest `can_user_access: "feature_flag.*"` proven in production |
-| Independent deployment and rollback | **Solved** | FEWS CDN deployment with `pipeline_template.yaml`; rollback by re-deploying previous BUILD_ID |
-| Design system in TypeScript | **Solved** | `@workiva/unify ^2.32.1` provides native React components |
-| Cross-experience navigation | **Solved** | `@workiva/navigator_mfe_service` handles routing between MFEs |
-| Dart and TypeScript coexistence in wdesk | **Solved** | Already the production reality — Dart MFEs and TS MFEs coexist |
+| **Can TypeScript MFEs run inside the Dart wdesk shell?** | **Solved — in production** | ts-grc runs 20+ TS experiences inside the Dart wdesk shell today |
+| **Multiple React runtimes in same browser** | **Solved** | `identifierPrefix: 'ts-grc-drawer'` prevents `useId` collisions |
+| **MFE registration from TypeScript** | **Solved** | `@workiva/microfrontend` `createEsmExtension()` + `manifest.yaml` |
+| **Authentication in TypeScript MFE** | **Solved** | `@workiva/session_mfe_service` provides `getSession()` — same auth context as Dart |
+| **Feature flag gating for rollout** | **Solved** | Manifest `can_user_access: "feature_flag.*"` proven in production |
+| **Independent deployment and rollback** | **Solved** | FEWS CDN + `pipeline_template.yaml`; rollback = re-deploy previous BUILD_ID |
+| **Design system in TypeScript** | **Solved** | `@workiva/unify ^2.32.1` — native React, same design system |
+| **Cross-experience navigation** | **Solved** | `@workiva/navigator_mfe_service` handles TS↔Dart experience routing |
+| **Dart and TypeScript coexistence** | **Solved** | Already production reality — form_config (Dart MFE) + ts-grc (TS MFE) + wdesk (Dart bundle) all coexist |
+| **Can we migrate one repo at a time?** | **Solved** | Each MFE registers independently via manifest. No "all or nothing" cutover required. |
+
+### Summary: Is Full Migration Feasible?
+
+**Yes.** The architecture supports it, the tooling exists, and precedent (ts-grc, form_config) proves it works. The primary risks are not technical — they are:
+
+1. **Cross-team coordination** — 5+ backend teams must provide REST/GraphQL endpoints
+2. **Feature parity verification** — systematic audit needed for the 4 modules that already have TS equivalents
+3. **Transition window management** — dual maintenance during each module's cutover
+4. **wdesk release coordination** — removing Dart packages is a breaking change that must be sequenced after TS stability
+
+**wdesk staying in Dart is NOT a blocker.** The MFE architecture decouples the shell from the modules. This is the entire point of the MFE pattern — and it is already working in production.
