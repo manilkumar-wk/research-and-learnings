@@ -2544,3 +2544,52 @@ graph TB
 4. **wdesk release coordination** — removing Dart packages is a breaking change that must be sequenced after TS stability
 
 **wdesk staying in Dart is NOT a blocker.** The MFE architecture decouples the shell from the modules. This is the entire point of the MFE pattern — and it is already working in production.
+
+---
+
+### Consolidated Challenge Matrix — Single View
+
+| # | Challenge | Category | Repos Affected | Severity | Owner | Solved? |
+|---|---|---|---|---|---|---|
+| **1** | **Frugal has no TypeScript SDK** | API/Transport | All 7 | **Hard Blocker** (org) | FEF / Platform | Mitigated for GRC — ts-grc uses GraphQL/REST |
+| **2** | **Backend teams must add REST/GraphQL endpoints** | API/Transport | All 7 | **Hard Blocker** | graph-server, grc-evergreen, audit-request-service, form_service, identity teams | Per-service audit needed |
+| **3** | **wdesk release coordination to remove Dart packages** | Deployment | w_sox, request_portal, framework_explorer | **Hard Blocker** | wdesk team + GRC | Precedent: form_config done |
+| **4** | **Feature parity gaps in existing ts-grc modules** | Functional | universe, assessments, frameworks, requests | **High** | GRC team | Audit needed per module |
+| **5** | **graph_ui monolith (15+ subsystems, no single TS replacement)** | Architecture | 5 of 7 repos | **High** | GRC team | Partial — distributed across 10+ ts-grc packages |
+| **6** | **web_skin_dart → Unify (12 components with no equivalent)** | UI | 6 of 7 repos (~100+ files) | **High** | GRC team | grc_universe_client fully done; others pending |
+| **7** | **NATS real-time → polling (degraded UX for bulk ops)** | Architecture | requests, assessments, form_config, request_portal | **High** | GRC + grc-evergreen | Apollo polling as baseline; subscriptions as enhancement |
+| **8** | **w_comments / w_attachments — no full TS widget** | Platform gap | request_portal, requests_client | **High** | DocPlat / Platform | Partial: pdf-markup, comments-library exist |
+| **9** | **Dual maintenance during transition** | Process | All 7 (sequentially) | **High** | GRC team | Feature freeze + feature flags per module |
+| **10** | **Migration ordering — repos have interdependencies** | Planning | All 7 | **Medium** | GRC team | Recommended: graph_admin → validate → request_portal → form_config → remove w_sox |
+| **11** | **w_flux → React state (different architecture)** | State mgmt | graph_admin, framework_explorer, form_config | **Medium** | GRC team | React hooks / RTK — well-understood |
+| **12** | **built_value → TypeScript types (~120+ models)** | Data layer | 5 of 7 repos | **Medium** | GRC team | GraphQL codegen replaces most |
+| **13** | **i18n migration (~700+ strings total)** | i18n | 6 of 7 repos | **Medium** | GRC team | react-intl — mechanical migration |
+| **14** | **BigQuery OAuth2 in graph_admin** | Auth | graph_admin only | **Medium** | GRC team | googleapis npm; defer to Phase 2 |
+| **15** | **Functional testing strategy (org gap)** | Testing | All repos | **Medium** | FEF / GRC | ts-grc uses Playwright — formalize as template |
+| **16** | **w_outline replacement (org blocker #2)** | UI | framework_explorer only | **Low** | ESG beach head + FEF | ts-grc framework-reference works without it |
+| **17** | **w_module lifecycle → React useEffect** | Architecture | 8 of 10 repos | **Low** | GRC team | Mechanical — well-understood |
+| **18** | **Landing page widgets from MFE** | MFE | graph_app (10 widgets) | **Low** | wdesk_sdk team | Open question — verify contribution point |
+| **19** | **Embeddable experiences from MFE** | MFE | graph_app (2 embeddables) | **Low** | wdesk_sdk team | Open question — verify MFE support |
+| **20** | **wdesk bundle size reduction** | Performance | wdesk | **Low** | wdesk team | Automatic benefit after removing Dart packages |
+| **21** | **Capacity / FTE alignment** | Process | All repos | **Low** | Engineering leadership | Hybrid teams (FTEs + contractors) |
+| — | TypeScript MFEs inside Dart wdesk shell | Architecture | — | **Solved** | — | ts-grc runs 20+ TS experiences in production |
+| — | Multiple React runtimes coexistence | Runtime | — | **Solved** | — | identifierPrefix prevents collisions |
+| — | Authentication in TS MFEs | Auth | — | **Solved** | — | @workiva/session_mfe_service |
+| — | Feature-flagged rollout | Deployment | — | **Solved** | — | manifest can_user_access proven |
+| — | Independent deployment/rollback | Deployment | — | **Solved** | — | FEWS CDN + pipeline_template.yaml |
+| — | Design system (Unify) in TS | UI | — | **Solved** | — | @workiva/unify ^2.32.1 native React |
+| — | Cross-experience navigation (Dart↔TS) | Navigation | — | **Solved** | — | @workiva/navigator_mfe_service |
+| — | Dart/TS coexistence in wdesk | Architecture | — | **Solved** | — | form_config (Dart MFE) + ts-grc (TS MFE) coexist |
+| — | Migrate one repo at a time | Strategy | — | **Solved** | — | Each MFE registers independently via manifest |
+| — | API layer replacement (Frugal → GraphQL) | API | — | **Solved** | — | ts-grc uses Apollo + RTK Query; 48K-line schema |
+
+### Challenge Breakdown by Count
+
+| Severity | Count | Action Required |
+|---|---|---|
+| **Hard Blockers** | 3 | Must resolve before each module's migration starts |
+| **High Priority** | 6 | Significant effort; known solutions; plan into timeline |
+| **Medium Priority** | 6 | Moderate effort; some can parallelize with migration |
+| **Low Priority** | 6 | Known path; address opportunistically |
+| **Already Solved** | 10 | No action — proven in production |
+| **Total** | **31** | 21 active + 10 solved |
