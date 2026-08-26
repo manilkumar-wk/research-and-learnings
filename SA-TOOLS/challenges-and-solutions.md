@@ -563,6 +563,76 @@ packages as islands until their owners have a TS story.
 
 ---
 
+## 19. If some graph_app is Dart and some is TypeScript, how do we
+deploy? Is there a benefit?
+
+**Challenge**
+
+Partial migration sounds like “half the files are `.dart` and half
+are `.ts` in the same folder, one deploy.” That is not how the
+compilers work.
+
+**Can Dart and TypeScript files compile as one graph_app library?**
+
+**No.** `dart2js` does not compile `.ts`. Vite does not compile
+`.dart`. You never mix languages **inside one file** or one
+compiler. They meet in the **browser as two JS bundles**.
+
+Partial means **some screens / panels** are TypeScript. The rest stay
+Dart until cut over. Boundary is a widget or experience, not a random
+file (do not convert `imports_view.dart` to TS while its parent
+`support_view.dart` still expects an OverReact factory).
+
+**How it deploys (same product, two JS outputs)**
+
+Today WDesk already loads extra JS that is not Dart (`graph_app_js`,
+Highcharts). A migrated panel is the same idea.
+
+```text
+graph_app repo
+  lib/          remaining Dart  →  dart2js  →  w_sox CDN JS
+  ts/ (or ts-grc)  new panels  →  Vite     →  second JS file
+
+WDesk page
+  loads Dart w_sox (Testing, reports, graph_ui, …)
+  loads TS JS when that screen/panel opens
+```
+
+**POC (Model A):** Vite JS is copied into the **existing** `w_sox`
+CDN tarball. WDesk pubspec unchanged. One pipeline, one rollback
+tag.
+
+**Later (Model B):** TS is its own FEWS/CDN MFE. Dart `w_sox` still
+publishes. Two frontend artifacts; still one WDesk product.
+
+User still opens the same GRC experience. They do not get two apps.
+
+**Benefits of partial (this is why it is the safe path)**
+
+| Benefit | Why it matters |
+| --- | --- |
+| Ship TS **without** graph_ui / `w_table` / Audit TS | Those stay Dart islands |
+| Keep WDesk login, nav, licensing, `canUserAccessV2` | No standalone SOX SPA |
+| Rollback is cheap | Unmigrated screens never left Dart; TS panel can revert independently (Model B) or with the `w_sox` tag (Model A) |
+| Risk stays small | POC is one Unify panel, not Testing |
+| Team can use the ts-grc stack on **new** chrome | Dart owners keep flagship screens stable |
+| Matches org reality | Universe / assessments already Dart shell + TS MFE |
+
+**Costs (be honest with managers)**
+
+- Two toolchains (`make` Dart + Vite) and two test runners
+- Dart and TS **cannot** share OverReact components, types, or one
+  Redux/Flux store — only props/JSON at the boundary
+- Dual deploy until the last Dart experience is gone
+- File-by-file conversion **inside** one OverReact tree creates a
+  broken boundary; convert a whole panel at a time
+
+**POC:** one Support or landing **panel** in TS, rest of graph_app
+unchanged, Model A CDN. That is the deploy proof for partial
+migration.
+
+---
+
 ## Decision summary (for the meeting)
 
 | # | Challenge | Migrate that layer? | Solution in one line |
