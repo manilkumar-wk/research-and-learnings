@@ -496,6 +496,7 @@ rewrite Testing.
 | 10 | Models | **Per screen** | No bulk dump |
 | 11 | Functional tests | **Not first** | Keep Skynet Dart |
 | 12 | Deploy Dart+TS | **Not microservices** | Same repo: Vite JS on existing CDN (POC), or later a TS MFE artifact next to `w_sox` |
+| 13 | Convert graph_app while graph_ui stays Dart | **Screens, not the repo** | Rewrite OverReact/Unify; keep graph_ui/w_table/audit as Dart islands; do not import Dart from TS |
 
 **POC that matches these solutions:** one Unify widget in WDesk (no
 NATS, no graph_ui, no Audit, no `w_table`), then one REST/GraphQL
