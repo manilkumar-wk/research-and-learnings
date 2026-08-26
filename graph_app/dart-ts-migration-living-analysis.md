@@ -51,6 +51,12 @@ This document does not recommend starting a rewrite. It explains what
 graph_app is, what it depends on, and what must be true before
 TypeScript work is safe.
 
+**Manager briefing (share before POC):**
+[`graph_app-ts-migration-manager-briefing.xlsx`](graph_app-ts-migration-manager-briefing.xlsx)
+— start with tab **01-Challenge and solution** (Frugal, Dart+TS without
+graph_ui, and the rest). Prose version:
+[`challenges-and-solutions.md`](challenges-and-solutions.md).
+
 ---
 
 ## 1. Repository Overview
