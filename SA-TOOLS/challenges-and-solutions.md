@@ -1,0 +1,323 @@
+# graph_app Dart → TypeScript: challenges and solutions
+
+**Audience:** engineering manager and tech leads  
+**Repo:** graph_app (`w_sox`)  
+**Date:** 26 Aug 2026  
+**How to use:** each row is one decision. Read the **solution** as the
+recommended path, not a commitment to rewrite SOX.
+
+Evidence: **Confirmed** = seen in graph_app. **Prior research** = ts-grc
+/ org TypeScript notes. **Open** = still needs an owner.
+
+---
+
+## 1. Frugal / NATS — do we migrate it, or replace it?
+
+**Challenge**
+
+graph_app talks to backends with **Frugal over NATS** (and some HTTP
+Frugal). Live graph, GRC testing (`grc-services`), and form-export
+**progress streams** all use this. Org position: **Frugal is not
+supported in TypeScript.**
+
+**Do we migrate Frugal to TypeScript?**
+
+**No.** Do not write a TypeScript Frugal or browser NATS client for
+SOX.
+
+**Solution**
+
+| Step | What to do |
+| --- | --- |
+| Keep Dart for NATS | Leave `GraphModule` / `w_graph_client` / export subscribers in Dart until a non-Frugal API exists. |
+| Replace, do not port | Match **ts-grc**: Apollo **GraphQL** + RTK Query **REST** against `grc-evergreen` (or graph-rpc REST). For progress, use **polling** (ts-grc pattern) or GraphQL subscriptions — not NATS in the browser. |
+| Confirm coverage | Ask evergreen/graph: which SOX, graph, export, dashboard, TQ calls already have GraphQL/REST? Anything still NATS-only stays Dart or needs a **backend** story. |
+| Optional bridge | If a TS screen must ship before GraphQL exists: Dart experience calls Frugal, TS UI gets **props/JSON**. TS never imports `frugal`. |
+
+**POC:** do **not** include NATS. POC-2 is one REST or GraphQL call
+with the WDesk session.
+
+---
+
+## 2. Can we mix Dart and TypeScript? Can we migrate graph_app without migrating graph_ui and other Dart packages?
+
+**Challenge**
+
+graph_app **imports** Dart packages: `graph_ui`, `audit`, `w_table`,
+`w_graph_client`, comments, attachments, viewer, and more. TypeScript
+**cannot** `pub get` those packages. WDesk also cannot add an npm
+package to a Dart pubspec.
+
+**Can Dart and TypeScript run together?**
+
+**Yes.** That is the only safe path. Other GRC modules already do this:
+Dart WDesk shell + TypeScript MFEs (`ts-grc`).
+
+**Must we migrate graph_ui (and other Dart packages) first?**
+
+**No.** You can migrate **pieces of graph_app** while `graph_ui`,
+`audit`, `w_table`, and the graph client **stay Dart**.
+
+**Solution — three coexistence rules**
+
+1. **Dart keeps owning the host.** WDesk still loads `w_sox`. Experience
+   configs, routes, OAuth scopes, and `canUserAccessV2` stay Dart until
+   that screen is a real MFE.
+2. **TypeScript does not import Dart libraries.** A TS screen must not
+   `import 'package:graph_ui/...'`. If the screen needs graph_ui
+   (forms, graph services, route helpers), either:
+   - leave that screen in Dart, or
+   - keep graph_ui as a **Dart island** next to a TS panel (Dart
+     renders the table/form; TS renders chrome), or
+   - call a **backend/GraphQL** API instead of going through graph_ui.
+3. **Migrate graph_app screens that do not need graph_ui first.**
+   Support tabs, simple dialogs, landing-widget chrome. Leave data
+   forms, raw graph, smart table, and test-form graph sections in Dart
+   until graph_ui has a TS story or those screens talk REST/GraphQL.
+
+**What this does *not* allow**
+
+- Deleting `w_sox` from WDesk while Audit, graph_ui, embeddable
+  spreadsheets, or landing widgets still register through graph_app.
+- A “fully TypeScript graph_app” while those Dart packages are still
+  required at runtime.
+
+**Same pattern for other Dart packages**
+
+| Package | Stay Dart? | How TS graph_app works with it |
+| --- | --- | --- |
+| `graph_ui` | Yes, for now | Dart island; do not migrate first |
+| `audit` | Yes | Compiled into SOX today; keep as Dart island or future Audit MFE |
+| `w_table` | Yes | Last to move; TS screens avoid the grid |
+| `w_graph_client` | Yes | Live graph stays Dart until GraphQL |
+| `w_comments`, attachments, outline, viewer, drawing | Yes | Platform islands; load from Dart experience assets |
+| `unify_ui`, OverReact | Rewrite in TS | Use `@workiva/unify` + React — this *is* the TS UI |
+| `launch_darkly`, `w_session` | Replace SDK, same behavior | ts-grc packages; shell still owns login |
+
+---
+
+## 3. WDesk still Dart — how does TypeScript load at all?
+
+**Challenge**
+
+Production SOX is not a website. WDesk compiles `w_sox`. An npm
+package cannot go in WDesk’s `pubspec.yaml`.
+
+**Solution**
+
+Pick one house (manager ask A3):
+
+- **Preferred (org / ts-grc):** register a **TypeScript MFE**. WDesk
+  loads JS from the CDN at runtime. Dart `w_sox` stays in pubspec
+  until that experience is cut over.
+- **Fallback:** Dart experience hosts a TS widget (`useTsComponent` /
+  Vite bundle). **Not in graph_app today** — confirm with platform
+  before betting the POC on it.
+
+Do **not** build a standalone SOX SPA (no WDesk). That drops login,
+nav, and licensing.
+
+---
+
+## 4. OverReact UI — convert or rewrite?
+
+**Challenge**
+
+No Dart→TypeScript UI converter. Screens are OverReact.
+
+**Solution**
+
+**Rewrite** to React 18 function components + **`@workiva/unify`**
+(same as ts-grc). Do not use raw MUI as the long-term look. POC = one
+small Unify panel, not Testing or Reports.
+
+---
+
+## 5. State (Flux + Redux) — one shared store?
+
+**Challenge**
+
+graph_app uses **both** Flux (`SoxStore` / `GraphModule`) and Redux.
+Dart and TypeScript **cannot** share one Redux store.
+
+**Solution**
+
+Do not put the store on `window`. During hybrid: TS is
+**presentational** (props + callbacks from Dart). When a whole
+experience is TS: **Redux Toolkit** local to that experience (ts-grc
+pattern). Port store **per screen**, not globally.
+
+---
+
+## 6. `w_table` / smart table — need a TS grid first?
+
+**Challenge**
+
+Reports, test steps, and planning use `w_table` plus many plugins.
+
+**Solution**
+
+**Keep Dart.** Do not block the SOX TS program on a grid rewrite. First
+TS screens must not include the smart table. Revisit when platform has
+a TS grid (Open).
+
+---
+
+## 7. Audit is inside SOX — migrate Audit first?
+
+**Challenge**
+
+`package:audit` is compiled into graph_app. SOX cannot `pub get` a
+TypeScript Audit package.
+
+**Solution**
+
+**No, do not migrate Audit first.** Keep Audit as a **Dart island**
+inside `w_sox` (or a future Audit MFE). Analyze `audit` as its own
+repo. SOX TS screens should avoid Audit widgets in the POC.
+
+---
+
+## 8. Login / session / licensing
+
+**Challenge**
+
+Login is WDesk. Access is `canUserV4` abilities plus workspace type
+(SOX vs ERM vs ESG, PBC rules, etc.). Wrong gates are a compliance
+issue.
+
+**Solution**
+
+- **Login:** do not build a TS login page. Use shell session
+  (`@workiva/session_mfe_service` in ts-grc).
+- **Licensing:** TS must apply the **same** ability IDs and
+  suppression map. Until then, Dart `canUserAccessV2` stays the gate
+  on the experience config. Any customer-facing TS screen needs
+  Dart-vs-TS access tests.
+
+---
+
+## 9. Feature flags (LaunchDarkly)
+
+**Challenge**
+
+Dart wrapper around LaunchDarkly; many SOX/GRC flag keys.
+
+**Solution**
+
+Keep the **same flag keys**. Use ts-grc
+`@workiva/grc-launch-darkly`. Dual-run Dart and TS on one flag.
+
+---
+
+## 10. Models / `built_value` / GRC YAML
+
+**Challenge**
+
+No `.sg.dart` → TypeScript converter. GRC types also come from
+`data/grc_model.yaml` (Python → Dart).
+
+**Solution**
+
+Port models **with the screen that owns them**. Later: one YAML → Dart
+and TS generators. Do not bulk-dump all models in the POC.
+
+---
+
+## 11. Tests (unit + Skynet functional)
+
+**Challenge**
+
+370 unit files; 44 Puppeteer/Skynet suites on a WDesk Docker stack.
+
+**Solution**
+
+- Unit tests: Vitest + Testing Library **in the same PR** as each TS
+  widget. Keep Dart tests until that Dart screen is deleted.
+- Functional: **do not port first.** Keep Dart/Skynet green. Add
+  `data-testid` on TS. Playwright later, per experience, after
+  dual-run.
+
+---
+
+## 12. Deploy / CI (CDN, FEWS, pub package)
+
+**Challenge**
+
+Today: Dart pub package + CDN + WDesk Docker + FEWS. Hybrid means two
+artifacts.
+
+**Solution**
+
+POC rides **existing Dart deploy**. A TS MFE gets its own FEWS/CDN
+pipeline (ts-grc pattern) only when that experience is real. Dual
+deploy until Dart for that screen is removed. Rollback = Dart artifact.
+
+---
+
+## 13. i18n, analytics, logging
+
+**Challenge**
+
+Workiva wrappers (`w_intl`, `w_translate_v2`, dual analytics
+pipelines).
+
+**Solution**
+
+- Strings: `@workiva/w_intl_ts` + react-intl; no hardcoded UI text.
+- Analytics: **Next Gen event names** from
+  `ANALYTICS_MIGRATION_MAPPING.md`.
+- Logging: `@workiva/grc-logger`; TS errors must reach App
+  Intelligence.
+
+---
+
+## 14. Comments, attachments, viewer, drawing, spreadsheet
+
+**Challenge**
+
+No public npm substitute. SOX loads their CSS/JS from Dart
+experiences.
+
+**Solution**
+
+**Platform islands.** Dart experience keeps loading those assets. TS
+does not replace `w_viewer` with a generic PDF viewer or the
+spreadsheet with a generic grid.
+
+---
+
+## 15. Landing-page widgets and embeddable experiences
+
+**Challenge**
+
+graph_app registers landing widgets and embeddable spreadsheets.
+MFE contribution for those is **unverified**.
+
+**Solution**
+
+Leave them on Dart `w_sox` until WDesk confirms an MFE contribution
+point. Do not remove `w_sox` from WDesk until these have a new home.
+
+---
+
+## Decision summary (for the meeting)
+
+| # | Challenge | Migrate that layer? | Solution in one line |
+| --- | --- | --- | --- |
+| 1 | Frugal / NATS | **No** — replace | GraphQL/REST + polling; Dart keeps NATS until coverage exists |
+| 2 | graph_ui and other Dart packages | **No, not first** | Coexist: TS screens that do not import Dart libs; Dart islands for the rest |
+| 3 | WDesk Dart shell | **No** | TS MFE or Dart-hosted TS widget; keep `w_sox` until cutover |
+| 4 | OverReact | **Yes, rewrite UI** | React + Unify |
+| 5 | Shared Dart/TS Redux | **No** | Props first; RTK per experience |
+| 6 | w_table | **No, not first** | Dart island |
+| 7 | Audit | **No, not first** | Dart island / later Audit MFE |
+| 8 | Login | **No** | Shell session |
+| 9 | LaunchDarkly | **Replace SDK only** | Same flag keys |
+| 10 | Models | **Per screen** | No bulk dump |
+| 11 | Functional tests | **Not first** | Keep Skynet Dart |
+| 12 | Deploy | **Add, don’t replace** | Dart CDN until that experience is an MFE |
+
+**POC that matches these solutions:** one Unify widget in WDesk (no
+NATS, no graph_ui, no Audit, no `w_table`), then one REST/GraphQL
+call.
