@@ -480,6 +480,89 @@ rewrite Testing.
 
 ---
 
+## 18. If we migrate dependent packages first, which one goes first?
+Does a microfrontend (MFE) help?
+
+**Challenge**
+
+It is natural to think: graph_app imports `graph_ui`, `w_table`,
+`audit`, … so migrate those packages to TypeScript **first**, then
+graph_app, one by one. And: if we deploy as **microfrontends**, maybe
+we can skip that wait.
+
+**Must we migrate dependent packages before graph_app TypeScript?**
+
+**No.** Start graph_app TypeScript on screens that do **not** import
+those Dart widgets. Other GRC modules already did this (Dart WDesk +
+ts-grc MFEs) without rewriting `graph_ui` first.
+
+**If we did migrate packages first, which one first?**
+
+Package-first is the **slow** path. It also **does not work as a
+simple queue**, because the deps have the same problem graph_app has:
+
+```text
+graph_app  →  graph_ui  →  w_table + w_graph_client + OverReact
+                 │                │
+                 │                └─ Frugal/NATS (cannot port to TS)
+                 └─ same Dart widgets graph_app uses
+```
+
+Migrating `graph_ui` first still cannot `import` Dart `w_table`.
+Migrating `w_graph_client` first is blocked by **Frugal not supported
+in TypeScript**. So “graph_ui first” is not a real unblocking move.
+
+**Order if leadership still wants a package queue** (owners, not
+graph_app doing all of this):
+
+| Order | What | Why this slot | Who owns it |
+| --- | --- | --- | --- |
+| **0 — do not migrate** | `unify_ui`, OverReact, `web_skin_dart`, `w_session`, LaunchDarkly | TS equivalents **already exist** (`@workiva/unify`, session MFE service, `grc-launch-darkly`). Rewrite graph_app UI against those; do not port Dart Unify. | graph_app / ts-grc |
+| **1 — backend, not a UI package** | GraphQL/REST for graph + GRC + export progress | Unblocks replacing `w_graph_client` / NATS. Without this, live graph stays Dart forever. | evergreen / graph |
+| **2 — consume existing platform TS** | comments, attachments, viewer, outline, session **if** they already ship TS MFEs | Do not rewrite them inside graph_app. Ask each product: Dart-only, dual, or TS MFE already? | platform product teams |
+| **3 — Audit as its own MFE** | `audit` | Separate product compiled into SOX today. Not a graph_app “dep to port first.” | Audit team |
+| **4 — graph_ui (later)** | shared graph chrome / forms | Biggest coupling (390 files) **and** it still needs `w_table` + graph APIs. Only start after (1) and a TS grid story, or accept graph_ui as a **Dart island** for years. | graph_ui team |
+| **5 — last** | `w_table` | Hardest UI kit; last to move. TS screens avoid the grid until then. | table team |
+
+**What graph_app should migrate first (the actual queue)**
+
+Not a Dart package. A **SOX screen**:
+
+1. POC: one Unify panel (no graph_ui, no `w_table`, no NATS)
+2. Support / landing chrome / simple dialogs
+3. Screens that already have REST (upgrade wizard, export list chrome)
+4. Testing **list chrome** only
+5. Last: test form, smart table, data forms, evidence tester
+
+**Does microfrontend deployment help?**
+
+**Yes, for shipping.** **No, for importing Dart widgets.**
+
+| MFE does | MFE does **not** |
+| --- | --- |
+| Let WDesk **load TypeScript JS** next to Dart `w_sox` (same pattern as ts-grc) | Let a `.tsx` file `import` `graph_ui` or `w_table` |
+| Independent deploy / rollback of SOX TS vs Dart Testing | Remove the need to rewrite OverReact |
+| Avoid waiting for graph_ui / `w_table` TypeScript | Make Frugal work in the browser |
+| Later: WDesk can load **two** MFEs (SOX TS + future graph_ui TS) side by side | Replace a Dart island without a TS version of that product |
+
+MFE is the **loading model**. Dart islands are the **widget model**.
+You want both:
+
+```text
+WDesk
+  ├─ Dart w_sox          (Testing, graph_ui, w_table, Audit, …)
+  └─ TS MFE (optional)   (new Unify SOX chrome)
+         └─ still cannot render Dart graph_ui inside the MFE
+            unless Dart mounts that island, or graph_ui itself
+            becomes a TS MFE later
+```
+
+**POC:** do **not** start by rewriting graph_ui. Use MFE **or** JS-in-CDN
+(Model A) to load one SOX TypeScript widget. Leave dependent Dart
+packages as islands until their owners have a TS story.
+
+---
+
 ## Decision summary (for the meeting)
 
 | # | Challenge | Migrate that layer? | Solution in one line |
