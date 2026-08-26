@@ -383,6 +383,103 @@ stay as they are.
 
 ---
 
+## 17. How do we convert graph_app if graph_ui and other Workiva UI
+packages stay Dart?
+
+**Challenge**
+
+graph_app is not a standalone UI kit. It **imports Dart components**
+from other Workiva packages and renders them on SOX screens. Confirmed
+in `lib/` (1,238 Dart files):
+
+| Dart package | Files that import it | What it is on screen |
+| --- | --- | --- |
+| `over_react` | 429 | graph_app’s own widgets (rewrite target) |
+| `graph_ui` | 390 | Shared graph chrome: `ContentFrame`, forms, graph services |
+| `web_skin_dart` | 303 | Legacy buttons, tabs, layout |
+| `w_graph_client` | 243 | Live graph / NATS client |
+| `unify_ui` | 209 | Unify widgets already used in Dart |
+| `w_table` | 77 | Smart table / grids |
+| `audit` | 71 | Audit experiences compiled into SOX |
+| `w_session` | 49 | Shell session |
+| `w_context_menu` | 34 | Context menus |
+| `w_attachments` | 27 | Attachments panel |
+| `w_landing_page_sdk` | 22 | Home widgets |
+| `highcharts` | 24 | Charts |
+| `w_outline` | 19 | Outline tree |
+| `w_router` | 17 | Experience routing |
+| `w_viewer` | 13 | Document viewer |
+| `markup` / `drawing` | 11 / 1 | Markup / drawing |
+| `w_comments` | 3 | Comments |
+| `w_dashboard` | 3 | Dashboards |
+| `embedded_spreadsheet_api` | 6 | Embeddable spreadsheet |
+
+TypeScript **cannot** `import 'package:graph_ui/...'`. There is no
+compiler that turns a Dart OverReact widget into a React component.
+So “convert graph_app” cannot mean “replace `w_sox` with npm and keep
+using Dart `graph_ui` widgets from TypeScript.”
+
+**Do we wait until graph_ui (and the rest) are TypeScript?**
+
+**No.** That would freeze SOX for years. Other GRC modules already
+ship TypeScript **next to** Dart WDesk.
+
+**Solution — convert screens, not the repo**
+
+Treat every Workiva UI dependency as one of three buckets:
+
+| Bucket | Packages | What you do in TypeScript |
+| --- | --- | --- |
+| **1. Rewrite** | `over_react`, `unify_ui`, `web_skin_dart` | New React + `@workiva/unify` widgets. This *is* converting graph_app UI. |
+| **2. Dart island (keep)** | `graph_ui`, `w_table`, `audit`, `w_graph_client`, comments, attachments, outline, viewer, drawing, dashboard, spreadsheet | Dart still **renders** that widget. TS never imports it. |
+| **3. Swap SDK** | `w_session`, LaunchDarkly, microfrontend | Use the **existing TS** packages (`session_mfe_service`, `grc-launch-darkly`, `@workiva/microfrontend`). Do not port Dart. |
+
+A hybrid screen looks like this (same page, two runtimes):
+
+```text
+WDesk (Dart) still loads w_sox
+  └─ Dart experience (route, OAuth, canUserAccessV2)
+       ├─ TypeScript panel  → Unify chrome, dialogs, lists that
+       │                      only need REST/GraphQL + session
+       └─ Dart island       → graph_ui ContentFrame / form,
+                              w_table grid, attachments, outline
+```
+
+**Three options when a screen needs graph_ui today**
+
+1. **Leave the screen in Dart** (default for test form, data form,
+   smart table, raw graph).
+2. **Split the page:** Dart mounts `graph_ui` / `w_table` into a DOM
+   node; TypeScript renders toolbar/chrome around it. Props/JSON
+   only — no shared store.
+3. **Stop using graph_ui on that screen:** call GraphQL/REST and
+   rebuild the UI in Unify. That **duplicates** graph_ui work; only
+   do it when backend coverage exists and product accepts the cost.
+
+Option 3 is not “using graph_ui from TypeScript.” It is replacing
+that screen’s dependency on graph_ui.
+
+**What you convert first (inside graph_app)**
+
+Safe: Support **tabs** that are mostly Unify/web_skin, landing-widget
+chrome, simple dialogs, upgrade-wizard display, export-list chrome.
+
+Not first: test form, reports smart table, data forms, evidence
+tester, planning Gantt, dashboards — those are graph_ui + `w_table`
++ attachments + outline.
+
+**What this does *not* allow**
+
+- `import { ContentFrame } from 'graph_ui'` in a `.tsx` file
+- Deleting `w_sox` from WDesk while any island still needs Dart
+- Waiting for a full graph_ui TypeScript rewrite before any SOX TS
+
+**POC:** one Unify widget with **no** `graph_ui`, `w_table`, Audit,
+or NATS. That proves hybrid loading. It does not prove you can
+rewrite Testing.
+
+---
+
 ## Decision summary (for the meeting)
 
 | # | Challenge | Migrate that layer? | Solution in one line |
@@ -399,6 +496,7 @@ stay as they are.
 | 10 | Models | **Per screen** | No bulk dump |
 | 11 | Functional tests | **Not first** | Keep Skynet Dart |
 | 12 | Deploy Dart+TS | **Not microservices** | Same repo: Vite JS on existing CDN (POC), or later a TS MFE artifact next to `w_sox` |
+| 13 | Convert graph_app while graph_ui stays Dart | **Screens, not the repo** | Rewrite OverReact/Unify; keep graph_ui/w_table/audit as Dart islands; do not import Dart from TS |
 
 **POC that matches these solutions:** one Unify widget in WDesk (no
 NATS, no graph_ui, no Audit, no `w_table`), then one REST/GraphQL
