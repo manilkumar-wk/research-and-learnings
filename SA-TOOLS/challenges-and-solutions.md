@@ -9,6 +9,9 @@ recommended path, not a commitment to rewrite SOX.
 Evidence: **Confirmed** = seen in graph_app. **Prior research** = ts-grc
 / org TypeScript notes. **Open** = still needs an owner.
 
+**Full inventory** (Vite for managers, 225 vs 632 file counts, plan):
+[`full-migration-analysis.md`](full-migration-analysis.md).
+
 ---
 
 ## 1. Frugal / NATS — do we migrate it, or replace it?
