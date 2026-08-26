@@ -53,9 +53,9 @@ TypeScript work is safe.
 
 **Manager briefing (share before POC):**
 [`graph_app-ts-migration-manager-briefing.xlsx`](graph_app-ts-migration-manager-briefing.xlsx)
-— complexities, challenges, blockers, and decisions needed before a
-POC. Use that workbook in a short review; keep this markdown for
-engineers.
+— start with tab **01-Challenge and solution** (Frugal, Dart+TS without
+graph_ui, and the rest). Prose version:
+[`challenges-and-solutions.md`](challenges-and-solutions.md).
 
 ---
 
