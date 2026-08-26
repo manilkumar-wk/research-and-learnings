@@ -398,7 +398,7 @@ stay as they are.
 | 9 | LaunchDarkly | **Replace SDK only** | Same flag keys |
 | 10 | Models | **Per screen** | No bulk dump |
 | 11 | Functional tests | **Not first** | Keep Skynet Dart |
-| 12 | Deploy | **Add, don’t replace** | Dart CDN until that experience is an MFE |
+| 12 | Deploy Dart+TS | **Not microservices** | Same repo: Vite JS on existing CDN (POC), or later a TS MFE artifact next to `w_sox` |
 
 **POC that matches these solutions:** one Unify widget in WDesk (no
 NATS, no graph_ui, no Audit, no `w_table`), then one REST/GraphQL
