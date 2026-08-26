@@ -985,7 +985,12 @@ Safe incremental path for **graph_app**:
 7. **Keep Dart functional tests** until a given experience has TS
    parity sign-off; dual-run that experience.
 8. **Do not migrate graph_ui or audit from this repo.** Analyze them
-   next. SOX cannot drop Dart while it imports them.
+   next. SOX cannot drop Dart while it imports them. Package-first
+   order is a trap: `graph_ui` itself depends on Dart `w_table` and
+   `w_graph_client` (Frugal). MFE helps WDesk **load** TypeScript next
+   to `w_sox`; it does **not** let TS import Dart widgets. See
+   challenge **#18** in
+   [`challenges-and-solutions.md`](challenges-and-solutions.md).
 9. **Remove `w_sox` from WDesk pubspec** only after the last
    remaining experience (including landing widgets and embeddable
    spreadsheets) has an MFE or an explicit Dart island owned by
