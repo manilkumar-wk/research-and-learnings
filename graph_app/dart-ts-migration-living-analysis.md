@@ -949,6 +949,15 @@ Must be confirmed on the Workiva Ecosystem Map (Open unless noted):
 
 Safe incremental path for **graph_app**:
 
+0. **You cannot convert the repo while Dart UI packages stay.**
+   TypeScript cannot import `graph_ui`, `w_table`, `audit`, or other
+   Dart widgets. Convert **screens** (or panels) that do not need
+   those packages. Leave graph_ui / `w_table` / attachments / outline
+   as **Dart islands** on the same page. Confirmed import counts in
+   `lib/`: `graph_ui` 390 files, `over_react` 429, `web_skin_dart`
+   303, `w_graph_client` 243, `unify_ui` 209, `w_table` 77, `audit`
+   71. See challenge **#17** in
+   [`challenges-and-solutions.md`](challenges-and-solutions.md).
 1. **Do not rewrite graph_app as a TS SPA.** Keep `w_sox` in WDesk
    until a SOX MFE (or set of MFEs) can replace it experience by
    experience.
