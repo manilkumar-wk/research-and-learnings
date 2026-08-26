@@ -57,6 +57,10 @@ TypeScript work is safe.
 graph_ui, and the rest). Prose version:
 [`challenges-and-solutions.md`](challenges-and-solutions.md).
 
+**Full inventory (26 Aug 2026):** Vite deploy in plain language, file
+counts (225 closed / 632 blocked), and step-by-step plan:
+[`full-migration-analysis.md`](full-migration-analysis.md).
+
 ---
 
 ## 1. Repository Overview
