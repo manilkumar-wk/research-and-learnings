@@ -651,6 +651,7 @@ migration.
 | 12 | Deploy Dart+TS | **Not microservices** | Same repo: Vite JS on existing CDN (POC), or later a TS MFE artifact next to `w_sox` |
 | 13 | Convert graph_app while graph_ui stays Dart | **Screens, not the repo** | Rewrite OverReact/Unify; keep graph_ui/w_table/audit as Dart islands; do not import Dart from TS |
 | 14 | Migrate deps first? Which package? | **No, not first** | graph_ui is blocked by `w_table` + Frugal; start a SOX screen. MFE helps **load** TS, not **import** Dart widgets |
+| 15 | Partial Dart + TS deploy | **Yes — two JS bundles** | Not one mixed compiler. Model A: Vite JS on existing CDN. Benefit: ship TS without waiting for graph_ui; keep WDesk |
 
 **POC that matches these solutions:** one Unify widget in WDesk (no
 NATS, no graph_ui, no Audit, no `w_table`), then one REST/GraphQL
