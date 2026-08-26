@@ -301,6 +301,88 @@ point. Do not remove `w_sox` from WDesk until these have a new home.
 
 ---
 
+## 16. Dart + TypeScript in the same product — how do we deploy? Do we need microservices?
+
+**Challenge**
+
+If the UI is mixed Dart and TypeScript, people often assume we must
+split graph_app into many **microservices** (separate backend
+services) or many independently deployed apps.
+
+**Do we need everything as a microservice?**
+
+**No.** This is a **frontend packaging** problem, not a backend
+rewrite. GRC backends (graph, GRC services, licensing) already exist.
+You do not create a new microservice per TypeScript widget.
+
+Also: **microfrontend (MFE) ≠ microservice.**
+
+| Term | What it is | Needed for Dart+TS? |
+| --- | --- | --- |
+| Microservice | A **backend** process (its own deploy, API, data) | **No** — not required for TS UI |
+| Microfrontend (MFE) | A **frontend JS bundle** WDesk loads at runtime from CDN | **Optional** — one way to ship TS next to Dart WDesk |
+| Static JS next to Dart | Vite/TS compiled into JS that Dart `loadStaticAssets` already loads | **Yes for a small POC** — graph_app already does this today for `graph_app_js`, Highcharts, `w_table` bindings |
+
+**How graph_app deploys today (Confirmed)**
+
+One GitHub Actions pipeline already publishes **four artifacts** from
+the same repo — all still **one product**, not a microservice farm:
+
+1. Dart **pub package** `w_sox` (what WDesk depends on)
+2. **CDN** JS/CSS from `app/` (`dart2js`)
+3. **Docker** WDesk app-server image (`Dockerfile-wdeskapp`)
+4. **FEWS** deploy using `app/web/manifest.yaml` (`w_sox_app`)
+
+**Solution — two frontend deploy models (pick one for the POC)**
+
+### Model A — same repo, one WDesk package (best for first POC)
+
+TypeScript lives in graph_app (for example `ts/`). Vite builds a JS
+bundle. The Dart experience loads it the same way it already loads
+`packages/graph_app_js/.../commonApp.bundle.js`.
+
+```text
+Developer merge
+    → CI: dart2js (existing) + vite build (new, small)
+    → JS file is included in the w_sox / CDN tarball
+    → WDesk still pub-depends on w_sox only
+    → One rollback: previous w_sox + CDN tag
+```
+
+- **Backend:** unchanged
+- **WDesk pubspec:** unchanged
+- **New services:** none
+- **New microservice:** none
+
+### Model B — TypeScript MFE next to Dart `w_sox` (later, ts-grc style)
+
+A SOX package in **ts-grc** (or a graph_app MFE pipeline) publishes
+its **own** FEWS/CDN artifact. WDesk **runtime-loads** that JS. Dart
+`w_sox` still publishes as today for unmigrated screens.
+
+```text
+graph_app CI  → w_sox pub + Dart CDN  (Testing, reports, graph_ui, …)
+ts-grc CI     → SOX TS MFE CDN         (the new Unify screen)
+WDesk shell   → loads both at runtime
+```
+
+- Still **not** a backend microservice
+- Two **frontend** artifacts (Dart + TS), independently rollback-able
+- Need WDesk MFE registration (scopes, route), like universe/assessments
+
+**What you do *not* do**
+
+- Split SOX into one Kubernetes service per screen
+- Stand up a new Frugal service “for TypeScript”
+- Replace the Dart CDN pipeline on day one
+- Require graph_ui / audit to become their own microservices first
+
+**POC deploy:** Model A (JS inside existing CDN) unless platform says
+the only supported path is Model B (ts-grc MFE). Either way, backends
+stay as they are.
+
+---
+
 ## Decision summary (for the meeting)
 
 | # | Challenge | Migrate that layer? | Solution in one line |
@@ -316,7 +398,7 @@ point. Do not remove `w_sox` from WDesk until these have a new home.
 | 9 | LaunchDarkly | **Replace SDK only** | Same flag keys |
 | 10 | Models | **Per screen** | No bulk dump |
 | 11 | Functional tests | **Not first** | Keep Skynet Dart |
-| 12 | Deploy | **Add, don’t replace** | Dart CDN until that experience is an MFE |
+| 12 | Deploy Dart+TS | **Not microservices** | Same repo: Vite JS on existing CDN (POC), or later a TS MFE artifact next to `w_sox` |
 
 **POC that matches these solutions:** one Unify widget in WDesk (no
 NATS, no graph_ui, no Audit, no `w_table`), then one REST/GraphQL
